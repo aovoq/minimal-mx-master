@@ -14,9 +14,7 @@ final class ReprogControlsFeature {
     }
 
     func configureGesture() -> ReprogConfiguration? {
-        let indices: [UInt8] = [0xFF, 1, 2, 3, 4, 5, 6]
-
-        for index in indices {
+        for index in ReprogControls.candidateDeviceIndices {
             guard let featureIndex = findFeature(deviceIndex: index) else { continue }
             AppLog.hid.info("Found REPROG_CONTROLS_V4 at index \(featureIndex) deviceIndex \(index)")
             let controls = readControls(deviceIndex: index, featureIndex: featureIndex)
@@ -55,7 +53,7 @@ final class ReprogControlsFeature {
             deviceIndex: configuration.deviceIndex,
             featureIndex: configuration.featureIndex,
             function: 3,
-            params: reportingParams(
+            params: ReprogControls.reportingParams(
                 cid: configuration.control.cid,
                 flags: ReprogControls.clearReportingFlags
             )
@@ -117,15 +115,9 @@ final class ReprogControlsFeature {
                     function: 1,
                     params: [controlIndex]
                 )?.params,
-                params.count >= 9
+                let control = ReprogControls.control(from: params)
             else { return nil }
-
-            return ReprogControl(
-                cid: UInt16(params[0]) << 8 | UInt16(params[1]),
-                taskID: UInt16(params[2]) << 8 | UInt16(params[3]),
-                flags: params[4],
-                additionalFlags: params[8]
-            )
+            return control
         }
     }
 
@@ -161,11 +153,7 @@ final class ReprogControlsFeature {
             deviceIndex: deviceIndex,
             featureIndex: featureIndex,
             function: 3,
-            params: reportingParams(cid: cid, flags: flags)
+            params: ReprogControls.reportingParams(cid: cid, flags: flags)
         ) != nil
-    }
-
-    private func reportingParams(cid: UInt16, flags: UInt8) -> [UInt8] {
-        [UInt8(cid >> 8), UInt8(cid & 0xFF), flags, 0, 0]
     }
 }

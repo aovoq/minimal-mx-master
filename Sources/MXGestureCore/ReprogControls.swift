@@ -33,6 +33,7 @@ public enum ReprogControls {
     public static let rawXYReportingFlags: UInt8 = 0x33
     public static let divertOnlyReportingFlags: UInt8 = 0x03
     public static let clearReportingFlags: UInt8 = 0x22
+    public static let candidateDeviceIndices: [UInt8] = [0xFF, 1, 2, 3, 4, 5, 6]
 
     public static func chooseGestureControl(from controls: [ReprogControl]) -> ReprogControl? {
         for cid in preferredGestureCIDs {
@@ -41,6 +42,20 @@ public enum ReprogControls {
             }
         }
         return controls.first(where: { $0.isGestureCandidate })
+    }
+
+    public static func control(from params: [UInt8]) -> ReprogControl? {
+        guard params.count >= 9 else { return nil }
+        return ReprogControl(
+            cid: UInt16(params[0]) << 8 | UInt16(params[1]),
+            taskID: UInt16(params[2]) << 8 | UInt16(params[3]),
+            flags: params[4],
+            additionalFlags: params[8]
+        )
+    }
+
+    public static func reportingParams(cid: UInt16, flags: UInt8) -> [UInt8] {
+        [UInt8(cid >> 8), UInt8(cid & 0xFF), flags, 0, 0]
     }
 
     public static func pressedCIDs(from eventParams: [UInt8]) -> Set<UInt16> {

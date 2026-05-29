@@ -2,8 +2,6 @@ import CoreGraphics
 import Foundation
 
 public final class ActionExecutor {
-    public static let syntheticMarker: Int64 = 0x4D584742
-
     private let queue = DispatchQueue(label: "dev.aovoq.MXGestureBar.ActionExecutor")
     private var enabled: Bool
     private var config: AppConfig
@@ -41,30 +39,15 @@ public final class ActionExecutor {
     }
 
     private func post(_ shortcut: Shortcut) {
-        let modifiers = shortcut.keys.filter { ShortcutKeyMap.isModifier($0) }
-        let modifierCodes = modifiers.compactMap { ShortcutKeyMap.modifierKeyCode(for: $0) }
-        let flags = ShortcutKeyMap.flags(for: modifiers)
-        let keys = shortcut.keys.filter { !ShortcutKeyMap.isModifier($0) }
-
-        for code in modifierCodes {
-            postKey(code, down: true, flags: flags)
-        }
-        if !modifierCodes.isEmpty {
-            Thread.sleep(forTimeInterval: 0.01)
-        }
-
-        for key in keys {
-            guard let keyCode = ShortcutKeyMap.keyCode(for: key) else {
+        for action in ShortcutPostPlan(shortcut: shortcut).actions {
+            switch action {
+            case let .key(code, down, flags):
+                postKey(code, down: down, flags: flags)
+            case let .pause(duration):
+                Thread.sleep(forTimeInterval: duration)
+            case let .unsupportedKey(key):
                 AppLog.gesture.error("Unsupported shortcut key: \(key, privacy: .public)")
-                continue
             }
-            postKey(keyCode, down: true, flags: flags)
-            Thread.sleep(forTimeInterval: 0.01)
-            postKey(keyCode, down: false, flags: flags)
-        }
-
-        for code in modifierCodes.reversed() {
-            postKey(code, down: false, flags: [])
         }
     }
 
@@ -73,7 +56,7 @@ public final class ActionExecutor {
             return
         }
         event.flags = flags
-        event.setIntegerValueField(.eventSourceUserData, value: Self.syntheticMarker)
+        event.setIntegerValueField(.eventSourceUserData, value: SyntheticEventMarker.userData)
         event.post(tap: .cgSessionEventTap)
     }
 }

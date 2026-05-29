@@ -11,14 +11,18 @@ final class GestureRuntimeController {
     private lazy var executor = ActionExecutor(config: config)
     private let hidManager = HIDDeviceManager()
     private let eventTap = EventTapController()
+    private let currentTime: () -> TimeInterval
 
     private var holdReleaseTimer: Timer?
-    private var hidStatus = HIDDeviceStatus.notConnected
+    private var state = GestureRuntimeState()
     private var captureServicesActive = false
-    private var lastRawXYSignalAt: TimeInterval?
 
-    init(config: AppConfig) {
+    init(
+        config: AppConfig,
+        currentTime: @escaping () -> TimeInterval = { Date().timeIntervalSinceReferenceDate }
+    ) {
         self.config = config
+        self.currentTime = currentTime
         wireCallbacks()
         _ = executor
     }
@@ -47,7 +51,7 @@ final class GestureRuntimeController {
     }
 
     func stopAndRelease() {
-        hidStatus = .notConnected
+        state.resetStatus()
         eventTap.stop()
         if captureServicesActive {
             hidManager.stop()
@@ -74,7 +78,7 @@ final class GestureRuntimeController {
         }
         hidManager.onStatusChanged = { [weak self] status in
             AppLog.hid.info("Device status: \(status.name, privacy: .public)")
-            self?.hidStatus = status
+            self?.state.update(status: status)
             self?.onDeviceNameChanged?(status.name)
         }
 
@@ -85,11 +89,10 @@ final class GestureRuntimeController {
             guard let self else {
                 return GestureInputPolicy(mode: .disabled, isHolding: false)
             }
-            return GestureInputPolicy(
+            return self.state.inputPolicy(
                 isEnabled: self.config.enabled,
-                hidStatus: self.hidStatus,
                 isHolding: self.recognizer.isHolding,
-                rawXYFallbackActive: self.rawXYFallbackActive
+                now: self.currentTime()
             )
         }
         eventTap.onDelta = { [weak self] dx, dy in
@@ -115,30 +118,21 @@ final class GestureRuntimeController {
     }
 
     private func handleGestureSignal(_ signal: HIDGestureSignal) {
-        if case .rawXY = signal {
-            lastRawXYSignalAt = Date().timeIntervalSinceReferenceDate
-        }
+        let effect = state.observe(signal, at: currentTime())
         recognizer.handle(signal)
-
-        switch signal {
-        case .buttonDown:
-            lastRawXYSignalAt = nil
-            scheduleHoldFailsafe()
-            publishHolding(true)
-        case .buttonUp:
-            lastRawXYSignalAt = nil
-            cancelHoldFailsafe()
-        case .rawXY:
-            break
-        }
+        apply(effect)
     }
 
-    private var rawXYFallbackActive: Bool {
-        guard hidStatus.gestureConfigured, hidStatus.rawXYEnabled, recognizer.isHolding else {
-            return false
+    private func apply(_ effect: GestureRuntimeState.SignalEffect) {
+        switch effect {
+        case .beginHold:
+            scheduleHoldFailsafe()
+            publishHolding(true)
+        case .endHold:
+            cancelHoldFailsafe()
+        case .none:
+            break
         }
-        guard let lastRawXYSignalAt else { return true }
-        return Date().timeIntervalSinceReferenceDate - lastRawXYSignalAt > 0.15
     }
 
     private func scheduleHoldFailsafe() {

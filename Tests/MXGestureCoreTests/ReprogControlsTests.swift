@@ -21,4 +21,24 @@ final class ReprogControlsTests: XCTestCase {
 
         XCTAssertEqual(ReprogControls.chooseGestureControl(from: [generic, preferred])?.cid, 0x00C3)
     }
+
+    func testControlParsingUsesHIDPPControlShape() {
+        let control = ReprogControls.control(from: [0x00, 0xC3, 0x12, 0x34, 0x20, 0, 0, 0, 0x01])
+
+        XCTAssertEqual(control?.cid, 0x00C3)
+        XCTAssertEqual(control?.taskID, 0x1234)
+        XCTAssertEqual(control?.flags, 0x20)
+        XCTAssertEqual(control?.additionalFlags, 0x01)
+    }
+
+    func testControlParsingRejectsShortPayloads() {
+        XCTAssertNil(ReprogControls.control(from: [0x00, 0xC3]))
+    }
+
+    func testReportingParamsUseCIDAndFlags() {
+        XCTAssertEqual(
+            ReprogControls.reportingParams(cid: 0x00C3, flags: ReprogControls.rawXYReportingFlags),
+            [0x00, 0xC3, ReprogControls.rawXYReportingFlags, 0, 0]
+        )
+    }
 }
