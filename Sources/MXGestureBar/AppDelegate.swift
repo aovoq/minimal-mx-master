@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         wireCallbacks()
+        _ = executor
         menu.setDevice("Not connected")
         menu.setPermission(
             accessibility: PermissionManager.isAccessibilityTrusted,
@@ -51,12 +52,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func wireCallbacks() {
         recognizer.onEvent = { [weak self] event in
-            DispatchQueue.main.async {
-                self?.handleGesture(event)
-            }
+            self?.handleGesture(event)
         }
         recognizer.onHoldChanged = { [weak self] holding in
-            if !holding { self?.menu.setHolding(false) }
+            guard !holding else { return }
+            DispatchQueue.main.async {
+                self?.menu.setHolding(false)
+            }
         }
 
         hidManager.onGestureSignal = { [weak self] signal in
@@ -124,8 +126,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handleGesture(_ event: GestureEvent) {
         AppLog.gesture.info("Gesture event: \(event.rawValue, privacy: .public)")
-        menu.setLast(event.rawValue)
         executor.execute(event)
+        DispatchQueue.main.async { [weak self] in
+            self?.menu.setLast(event.rawValue)
+        }
     }
 
     private func handleGestureSignal(_ signal: HIDGestureSignal) {

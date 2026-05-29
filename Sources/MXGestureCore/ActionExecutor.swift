@@ -15,6 +15,7 @@ public final class ActionExecutor {
         self.config = config
         self.enabled = config.enabled
         eventSource?.localEventsSuppressionInterval = 0
+        SystemEventsShortcutExecutor.prepare()
     }
 
     public func update(config: AppConfig) {
