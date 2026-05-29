@@ -16,6 +16,9 @@ public final class EventTapController {
     /// Fired when the safety watchdog forces a release because movement has
     /// been dropped for too long without `buttonUp`.
     public var onPanicRelease: () -> Void = {}
+    public var eventHandlingAllowed: () -> Bool = {
+        PermissionManager.isAccessibilityTrusted
+    }
 
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
@@ -33,7 +36,7 @@ public final class EventTapController {
 
     @discardableResult
     public func start() -> Bool {
-        guard tap == nil, PermissionManager.isAccessibilityTrusted else { return false }
+        guard tap == nil, eventHandlingAllowed() else { return false }
 
         let mask =
             (1 << CGEventType.mouseMoved.rawValue) |
@@ -70,6 +73,9 @@ public final class EventTapController {
         if let source {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
         }
+        if let tap {
+            CFMachPortInvalidate(tap)
+        }
         source = nil
         tap = nil
         dropStartedAt = nil
@@ -77,6 +83,14 @@ public final class EventTapController {
     }
 
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        guard eventHandlingAllowed() else {
+            if !panicLatched {
+                AppLog.gesture.error("Event handling unavailable; passing input through")
+            }
+            tripPanicRelease()
+            return Unmanaged.passUnretained(event)
+        }
+
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             // Tap was disabled while in the event stream. Assume any in-flight

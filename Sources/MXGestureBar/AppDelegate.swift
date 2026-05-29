@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var permissionTimer: Timer?
     private var holdReleaseTimer: Timer?
     private var hidStatus = HIDDeviceStatus(connected: false, name: "Not connected", rawXYEnabled: false)
+    private var captureServicesActive = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         wireCallbacks()
@@ -33,7 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.restartHID()
         }
 
-        permissionTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+        permissionTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             self?.refreshPermission()
         }
     }
@@ -44,8 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         permissionTimer?.invalidate()
         holdReleaseTimer?.invalidate()
-        eventTap.stop()
-        hidManager.stop()
+        stopCaptureServicesAndRelease()
     }
 
     private func wireCallbacks() {
@@ -67,6 +67,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.menu.setDevice(status.name)
         }
 
+        eventTap.eventHandlingAllowed = {
+            PermissionManager.isAccessibilityTrusted
+        }
         eventTap.policy = { [weak self] in
             guard let self else {
                 return GestureInputPolicy(mode: .disabled, isHolding: false)
@@ -89,10 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // any further drops. The user keeps cursor freedom no matter what.
             DispatchQueue.main.async {
                 AppLog.gesture.error("Panic release fired from EventTap watchdog")
-                self?.recognizer.forceRelease()
-                self?.menu.setHolding(false)
-                self?.holdReleaseTimer?.invalidate()
-                self?.holdReleaseTimer = nil
+                self?.releaseHeldGesture()
             }
         }
 
@@ -117,10 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startServices() {
-        if config.enabled {
-            hidManager.start()
-        }
-        _ = eventTap.start()
+        refreshPermission()
     }
 
     private func handleGesture(_ event: GestureEvent) {
@@ -143,9 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func scheduleHoldFailsafe() {
         holdReleaseTimer?.invalidate()
         holdReleaseTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
-            self?.recognizer.forceRelease()
-            self?.menu.setHolding(false)
-            self?.holdReleaseTimer = nil
+            self?.releaseHeldGesture()
         }
     }
 
@@ -157,24 +152,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.setEnabled(enabled)
 
         if enabled {
-            hidManager.start()
+            refreshPermission()
         } else {
-            hidManager.stop()
+            stopCaptureServicesAndRelease()
         }
     }
 
     private func restartHID() {
-        recognizer.forceRelease()
+        releaseHeldGesture()
+        guard config.enabled, PermissionManager.requiredPermissionsGranted else {
+            stopCaptureServicesAndRelease()
+            return
+        }
         hidManager.restart()
+        captureServicesActive = true
+        _ = eventTap.start()
     }
 
     private func refreshPermission() {
         let accessibility = PermissionManager.isAccessibilityTrusted
         let inputMonitoring = PermissionManager.isInputMonitoringTrusted
         menu.setPermission(accessibility: accessibility, inputMonitoring: inputMonitoring)
-        if accessibility {
-            _ = eventTap.start()
+
+        guard config.enabled, accessibility, inputMonitoring else {
+            stopCaptureServicesAndRelease()
+            return
         }
+
+        startCaptureServices()
+    }
+
+    private func startCaptureServices() {
+        hidManager.start()
+        captureServicesActive = true
+        _ = eventTap.start()
+    }
+
+    private func stopCaptureServicesAndRelease() {
+        hidStatus = HIDDeviceStatus(connected: false, name: "Not connected", rawXYEnabled: false)
+        eventTap.stop()
+        if captureServicesActive {
+            hidManager.stop()
+            captureServicesActive = false
+        }
+        releaseHeldGesture()
+    }
+
+    private func releaseHeldGesture() {
+        recognizer.forceRelease()
+        menu.setHolding(false)
+        holdReleaseTimer?.invalidate()
+        holdReleaseTimer = nil
     }
 
     private func requestMissingPermissions() {

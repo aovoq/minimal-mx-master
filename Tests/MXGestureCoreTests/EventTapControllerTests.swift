@@ -6,6 +6,7 @@ final class EventTapControllerTests: XCTestCase {
     func testRawXYMovementWatchdogReleasesAndLetsMovementThrough() {
         var now = 100.0
         let controller = EventTapController(currentTime: { now })
+        controller.eventHandlingAllowed = { true }
         controller.policy = {
             GestureInputPolicy(mode: .hidRawXY, isHolding: true)
         }
@@ -32,6 +33,7 @@ final class EventTapControllerTests: XCTestCase {
 
     func testTapDisabledByTimeoutForcesReleaseAndLetsEventThrough() {
         let controller = EventTapController(currentTime: { 100 })
+        controller.eventHandlingAllowed = { true }
         controller.policy = {
             GestureInputPolicy(mode: .hidRawXY, isHolding: true)
         }
@@ -52,6 +54,7 @@ final class EventTapControllerTests: XCTestCase {
 
     func testOtherMouseFallbackSignalsButNeverDropsTheButtonEvent() {
         let controller = EventTapController()
+        controller.eventHandlingAllowed = { true }
         controller.policy = {
             GestureInputPolicy(mode: .eventTapFallback, isHolding: false)
         }
@@ -71,6 +74,7 @@ final class EventTapControllerTests: XCTestCase {
 
     func testDisabledPolicyAlwaysPassesMovement() {
         let controller = EventTapController()
+        controller.eventHandlingAllowed = { true }
         controller.policy = {
             GestureInputPolicy(mode: .disabled, isHolding: true)
         }
@@ -80,6 +84,44 @@ final class EventTapControllerTests: XCTestCase {
 
         let move = makeMouseMoved(dx: 10, dy: 0)
         XCTAssertNotNil(controller.handleForTesting(type: .mouseMoved, event: move))
+    }
+
+    func testPermissionLossForcesReleaseAndNeverDropsRawXYMovement() {
+        let controller = EventTapController()
+        controller.eventHandlingAllowed = { false }
+        controller.policy = {
+            GestureInputPolicy(mode: .hidRawXY, isHolding: true)
+        }
+
+        var panicReleaseCount = 0
+        controller.onPanicRelease = {
+            panicReleaseCount += 1
+        }
+
+        let move = makeMouseMoved(dx: 10, dy: 0)
+        XCTAssertNotNil(controller.handleForTesting(type: .mouseMoved, event: move))
+        XCTAssertEqual(panicReleaseCount, 1)
+
+        let nextMove = makeMouseMoved(dx: 10, dy: 0)
+        XCTAssertNotNil(controller.handleForTesting(type: .mouseMoved, event: nextMove))
+        XCTAssertEqual(panicReleaseCount, 1)
+    }
+
+    func testPermissionLossMakesFallbackButtonsCompletelyPassive() {
+        let controller = EventTapController()
+        controller.eventHandlingAllowed = { false }
+        controller.policy = {
+            GestureInputPolicy(mode: .eventTapFallback, isHolding: false)
+        }
+
+        var signals: [HIDGestureSignal] = []
+        controller.onButtonSignal = {
+            signals.append($0)
+        }
+
+        let down = makeOtherMouseEvent(type: .otherMouseDown, buttonNumber: 3)
+        XCTAssertNotNil(controller.handleForTesting(type: .otherMouseDown, event: down))
+        XCTAssertTrue(signals.isEmpty)
     }
 
     private func makeMouseMoved(dx: Int64, dy: Int64) -> CGEvent {
