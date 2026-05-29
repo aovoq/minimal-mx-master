@@ -5,29 +5,9 @@ public final class HIDDeviceManager {
     public var onStatusChanged: ((HIDDeviceStatus) -> Void)?
     public var onGestureSignal: ((HIDGestureSignal) -> Void)?
 
-    private final class Session {
-        let device: IOHIDDevice
-        let buffer: UnsafeMutablePointer<UInt8>
-        let client: HIDPPClient
-        let name: String
-
-        init(device: IOHIDDevice, name: String) {
-            self.device = device
-            self.name = name
-            self.buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 64)
-            self.buffer.initialize(repeating: 0, count: 64)
-            self.client = HIDPPClient(device: device)
-        }
-
-        deinit {
-            buffer.deinitialize(count: 64)
-            buffer.deallocate()
-        }
-    }
-
     private let lock = NSLock()
     private var manager: IOHIDManager?
-    private var sessions: [Int: Session] = [:]
+    private var sessions: [Int: HIDDeviceSession] = [:]
     private var activeKey: Int?
     private var nextOpenAttemptAt = Date.distantPast
 
@@ -45,36 +25,12 @@ public final class HIDDeviceManager {
         guard manager == nil else { return }
         guard Date() >= nextOpenAttemptAt else { return }
 
-        let newManager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
-        IOHIDManagerSetDeviceMatching(newManager, [
-            kIOHIDVendorIDKey: LogitechDeviceCatalog.vendorID,
-            kIOHIDDeviceUsagePageKey: LogitechDeviceCatalog.hidppUsagePage,
-            kIOHIDDeviceUsageKey: LogitechDeviceCatalog.hidppUsage
-        ] as CFDictionary)
-
-        let context = Unmanaged.passUnretained(self).toOpaque()
-        IOHIDManagerRegisterDeviceMatchingCallback(newManager, Self.deviceMatched, context)
-        IOHIDManagerRegisterDeviceRemovalCallback(newManager, Self.deviceRemoved, context)
-
+        let newManager = makeManager()
         let matchedDescriptors = Self.matchedDescriptors(manager: newManager)
         let openResult = IOHIDManagerOpen(newManager, IOOptionBits(kIOHIDOptionsTypeNone))
+
         guard openResult == kIOReturnSuccess else {
-            nextOpenAttemptAt = Date().addingTimeInterval(5)
-            AppLog.hid.error("HID manager open failed: \(openResult) \(Self.returnName(openResult), privacy: .public)")
-            IOHIDManagerClose(newManager, IOOptionBits(kIOHIDOptionsTypeNone))
-            if openResult == kIOReturnExclusiveAccess, let descriptor = matchedDescriptors.first {
-                publishStatus(HIDDeviceStatus(
-                    connected: true,
-                    name: "\(descriptor.name) (HID busy; fallback)",
-                    rawXYEnabled: false
-                ))
-                return
-            }
-            publishStatus(HIDDeviceStatus(
-                connected: false,
-                name: "HID manager open failed \(Self.returnName(openResult))",
-                rawXYEnabled: false
-            ))
+            handleOpenFailure(openResult, manager: newManager, descriptors: matchedDescriptors)
             return
         }
 
@@ -98,6 +54,7 @@ public final class HIDDeviceManager {
         existing.forEach {
             $0.client.restoreDefaultReporting()
         }
+
         if let manager {
             IOHIDManagerUnscheduleFromRunLoop(
                 manager,
@@ -106,17 +63,57 @@ public final class HIDDeviceManager {
             )
             IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
         }
+
         manager = nil
         nextOpenAttemptAt = .distantPast
-        onStatusChanged?(HIDDeviceStatus(connected: false, name: "Not connected", rawXYEnabled: false))
+        onStatusChanged?(.notConnected)
     }
 
-    private func matched(device: IOHIDDevice) {
+    private func makeManager() -> IOHIDManager {
+        let newManager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+        IOHIDManagerSetDeviceMatching(newManager, [
+            kIOHIDVendorIDKey: LogitechDeviceCatalog.vendorID,
+            kIOHIDDeviceUsagePageKey: LogitechDeviceCatalog.hidppUsagePage,
+            kIOHIDDeviceUsageKey: LogitechDeviceCatalog.hidppUsage
+        ] as CFDictionary)
+
+        let context = Unmanaged.passUnretained(self).toOpaque()
+        IOHIDManagerRegisterDeviceMatchingCallback(newManager, Self.deviceMatched, context)
+        IOHIDManagerRegisterDeviceRemovalCallback(newManager, Self.deviceRemoved, context)
+        return newManager
+    }
+
+    private func handleOpenFailure(
+        _ result: IOReturn,
+        manager newManager: IOHIDManager,
+        descriptors: [HIDDeviceDescriptor]
+    ) {
+        nextOpenAttemptAt = Date().addingTimeInterval(5)
+        AppLog.hid.error("HID manager open failed: \(result) \(Self.returnName(result), privacy: .public)")
+        IOHIDManagerClose(newManager, IOOptionBits(kIOHIDOptionsTypeNone))
+
+        if result == kIOReturnExclusiveAccess, let descriptor = descriptors.first {
+            publishStatus(HIDDeviceStatus(
+                connected: true,
+                name: "\(descriptor.name) (HID busy; fallback)",
+                rawXYEnabled: false
+            ))
+            return
+        }
+
+        publishStatus(HIDDeviceStatus(
+            connected: false,
+            name: "HID manager open failed \(Self.returnName(result))",
+            rawXYEnabled: false
+        ))
+    }
+
+    func matched(device: IOHIDDevice) {
         let descriptor = HIDDeviceDescriptor(device: device)
         AppLog.hid.info("Matched HID device: \(descriptor.summary, privacy: .public)")
 
         let key = Self.key(for: device)
-        let session = Session(device: device, name: descriptor.name)
+        let session = HIDDeviceSession(device: device, name: descriptor.name)
         session.client.onGestureSignal = { [weak self] signal in
             self?.onGestureSignal?(signal)
         }
@@ -125,11 +122,30 @@ public final class HIDDeviceManager {
         IOHIDDeviceRegisterInputReportCallback(
             device,
             session.buffer,
-            64,
+            HIDDeviceSession.reportBufferSize,
             Self.inputReport,
             Unmanaged.passUnretained(self).toOpaque()
         )
 
+        configureGesture(for: session, key: key)
+    }
+
+    func removed(device: IOHIDDevice) {
+        let key = Self.key(for: device)
+        lock.withLock {
+            if activeKey == key { activeKey = nil }
+            sessions.removeValue(forKey: key)
+        }
+        publishStatus(.notConnected)
+    }
+
+    func report(device: IOHIDDevice, reportID: UInt8, bytes: [UInt8]) {
+        let key = Self.key(for: device)
+        let session = lock.withLock { sessions[key] }
+        session?.client.receive(reportID: reportID, bytes: bytes)
+    }
+
+    private func configureGesture(for session: HIDDeviceSession, key: Int) {
         DispatchQueue.global(qos: .utility).async { [weak self, weak session] in
             guard let self, let session else { return }
             guard let configuration = session.client.configureGesture() else {
@@ -153,22 +169,7 @@ public final class HIDDeviceManager {
         }
     }
 
-    private func removed(device: IOHIDDevice) {
-        let key = Self.key(for: device)
-        lock.withLock {
-            if activeKey == key { activeKey = nil }
-            sessions.removeValue(forKey: key)
-        }
-        publishStatus(HIDDeviceStatus(connected: false, name: "Not connected", rawXYEnabled: false))
-    }
-
-    private func report(device: IOHIDDevice, reportID: UInt8, bytes: [UInt8]) {
-        let key = Self.key(for: device)
-        let session = lock.withLock { sessions[key] }
-        session?.client.receive(reportID: reportID, bytes: bytes)
-    }
-
-    private func containsSession(_ session: Session, key: Int) -> Bool {
+    private func containsSession(_ session: HIDDeviceSession, key: Int) -> Bool {
         lock.withLock { sessions[key] === session }
     }
 
@@ -176,57 +177,5 @@ public final class HIDDeviceManager {
         DispatchQueue.main.async { [weak self] in
             self?.onStatusChanged?(status)
         }
-    }
-
-    private static func key(for device: IOHIDDevice) -> Int {
-        Int(bitPattern: Unmanaged.passUnretained(device).toOpaque())
-    }
-
-    private static func matchedDescriptors(manager: IOHIDManager) -> [HIDDeviceDescriptor] {
-        guard let devices = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice> else { return [] }
-        return devices
-            .map(HIDDeviceDescriptor.init)
-            .sorted { $0.summary < $1.summary }
-    }
-
-    private static func returnName(_ result: IOReturn) -> String {
-        switch result {
-        case kIOReturnExclusiveAccess:
-            return "kIOReturnExclusiveAccess"
-        case kIOReturnNotPermitted:
-            return "kIOReturnNotPermitted"
-        case kIOReturnNotPrivileged:
-            return "kIOReturnNotPrivileged"
-        case kIOReturnBusy:
-            return "kIOReturnBusy"
-        default:
-            return "\(result)"
-        }
-    }
-
-    private static let deviceMatched: IOHIDDeviceCallback = { context, _, _, device in
-        guard let context else { return }
-        Unmanaged<HIDDeviceManager>
-            .fromOpaque(context)
-            .takeUnretainedValue()
-            .matched(device: device)
-    }
-
-    private static let deviceRemoved: IOHIDDeviceCallback = { context, _, _, device in
-        guard let context else { return }
-        Unmanaged<HIDDeviceManager>
-            .fromOpaque(context)
-            .takeUnretainedValue()
-            .removed(device: device)
-    }
-
-    private static let inputReport: IOHIDReportCallback = {
-        context, _, sender, _, reportID, report, reportLength in
-        guard let context, let sender else { return }
-        let bytes = Array(UnsafeBufferPointer(start: report, count: reportLength))
-        Unmanaged<HIDDeviceManager>
-            .fromOpaque(context)
-            .takeUnretainedValue()
-            .report(device: unsafeBitCast(sender, to: IOHIDDevice.self), reportID: UInt8(reportID), bytes: bytes)
     }
 }

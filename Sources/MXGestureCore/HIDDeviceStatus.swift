@@ -6,6 +6,12 @@ public struct HIDDeviceStatus: Equatable {
     public var rawXYEnabled: Bool
     public var gestureConfigured: Bool
 
+    public static let notConnected = HIDDeviceStatus(
+        connected: false,
+        name: "Not connected",
+        rawXYEnabled: false
+    )
+
     public init(
         connected: Bool,
         name: String,
