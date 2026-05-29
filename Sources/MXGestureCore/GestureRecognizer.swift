@@ -28,7 +28,7 @@ public final class GestureRecognizer {
 
     private enum Phase {
         case idle
-        case holding(startedAt: TimeInterval, ignoreUntil: TimeInterval, ignoredFirst: Bool)
+        case holding(startedAt: TimeInterval, ignoreUntil: TimeInterval)
         case triggered
         case cooldown(until: TimeInterval)
     }
@@ -85,8 +85,7 @@ public final class GestureRecognizer {
         gestureLikeMovement = false
         phase = .holding(
             startedAt: now,
-            ignoreUntil: now + settings.initialIgnoreMs / 1000,
-            ignoredFirst: false
+            ignoreUntil: now + settings.initialIgnoreMs / 1000
         )
         onHoldChanged?(true)
     }
@@ -106,15 +105,14 @@ public final class GestureRecognizer {
     }
 
     private func move(dx: Int, dy: Int, now: TimeInterval) {
-        guard case let .holding(startedAt, ignoreUntil, ignoredFirst) = phase else { return }
+        guard case let .holding(startedAt, ignoreUntil) = phase else { return }
 
         if now - startedAt > settings.timeoutMs / 1000 {
             forceRelease(now: now)
             return
         }
 
-        if !ignoredFirst || now < ignoreUntil {
-            phase = .holding(startedAt: startedAt, ignoreUntil: ignoreUntil, ignoredFirst: true)
+        if now < ignoreUntil {
             return
         }
 
