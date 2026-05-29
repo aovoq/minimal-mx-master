@@ -86,6 +86,25 @@ final class EventTapControllerTests: XCTestCase {
         XCTAssertNotNil(controller.handleForTesting(type: .mouseMoved, event: move))
     }
 
+    func testRawXYMovementFallbackEmitsDeltaAndStillDropsCursorMovement() {
+        let controller = EventTapController()
+        controller.eventHandlingAllowed = { true }
+        controller.policy = {
+            GestureInputPolicy(mode: .hidRawXYWithMovementFallback, isHolding: true)
+        }
+
+        var deltas: [(Int, Int)] = []
+        controller.onDelta = { dx, dy in
+            deltas.append((dx, dy))
+        }
+
+        let move = makeMouseMoved(dx: 12, dy: -4)
+        XCTAssertNil(controller.handleForTesting(type: .mouseMoved, event: move))
+        XCTAssertEqual(deltas.count, 1)
+        XCTAssertEqual(deltas[0].0, 12)
+        XCTAssertEqual(deltas[0].1, -4)
+    }
+
     func testPermissionLossForcesReleaseAndNeverDropsRawXYMovement() {
         let controller = EventTapController()
         controller.eventHandlingAllowed = { false }

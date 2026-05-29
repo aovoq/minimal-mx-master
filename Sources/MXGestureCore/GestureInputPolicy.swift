@@ -6,6 +6,7 @@ public struct GestureInputPolicy: Equatable {
         case eventTapFallback
         case hidButtonOnly
         case hidRawXY
+        case hidRawXYWithMovementFallback
     }
 
     public var mode: Mode
@@ -19,7 +20,8 @@ public struct GestureInputPolicy: Equatable {
     public init(
         isEnabled: Bool,
         hidStatus: HIDDeviceStatus,
-        isHolding: Bool
+        isHolding: Bool,
+        rawXYFallbackActive: Bool = false
     ) {
         self.isHolding = isHolding
 
@@ -29,7 +31,11 @@ public struct GestureInputPolicy: Equatable {
         }
 
         if hidStatus.gestureConfigured {
-            mode = hidStatus.rawXYEnabled ? .hidRawXY : .hidButtonOnly
+            if hidStatus.rawXYEnabled {
+                mode = rawXYFallbackActive ? .hidRawXYWithMovementFallback : .hidRawXY
+            } else {
+                mode = .hidButtonOnly
+            }
         } else if hidStatus.connected {
             // Device is present but we couldn't program it (unknown firmware,
             // permission glitch, etc.). Fallback can still be useful.
@@ -51,10 +57,14 @@ public struct GestureInputPolicy: Equatable {
     }
 
     public var usesMovementFallback: Bool {
-        isHolding && (mode == .eventTapFallback || mode == .hidButtonOnly)
+        isHolding && (
+            mode == .eventTapFallback ||
+            mode == .hidButtonOnly ||
+            mode == .hidRawXYWithMovementFallback
+        )
     }
 
     public var blocksMovement: Bool {
-        isHolding && mode == .hidRawXY
+        isHolding && (mode == .hidRawXY || mode == .hidRawXYWithMovementFallback)
     }
 }

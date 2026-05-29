@@ -29,6 +29,7 @@ public final class HIDDeviceManager {
     private var manager: IOHIDManager?
     private var sessions: [Int: Session] = [:]
     private var activeKey: Int?
+    private var nextOpenAttemptAt = Date.distantPast
 
     public init() {}
 
@@ -42,6 +43,7 @@ public final class HIDDeviceManager {
 
     public func start() {
         guard manager == nil else { return }
+        guard Date() >= nextOpenAttemptAt else { return }
 
         let newManager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         IOHIDManagerSetDeviceMatching(newManager, [
@@ -54,18 +56,29 @@ public final class HIDDeviceManager {
         IOHIDManagerRegisterDeviceMatchingCallback(newManager, Self.deviceMatched, context)
         IOHIDManagerRegisterDeviceRemovalCallback(newManager, Self.deviceRemoved, context)
 
+        let matchedDescriptors = Self.matchedDescriptors(manager: newManager)
         let openResult = IOHIDManagerOpen(newManager, IOOptionBits(kIOHIDOptionsTypeNone))
         guard openResult == kIOReturnSuccess else {
-            AppLog.hid.error("HID manager open failed: \(openResult)")
+            nextOpenAttemptAt = Date().addingTimeInterval(5)
+            AppLog.hid.error("HID manager open failed: \(openResult) \(Self.returnName(openResult), privacy: .public)")
             IOHIDManagerClose(newManager, IOOptionBits(kIOHIDOptionsTypeNone))
+            if openResult == kIOReturnExclusiveAccess, let descriptor = matchedDescriptors.first {
+                publishStatus(HIDDeviceStatus(
+                    connected: true,
+                    name: "\(descriptor.name) (HID busy; fallback)",
+                    rawXYEnabled: false
+                ))
+                return
+            }
             publishStatus(HIDDeviceStatus(
                 connected: false,
-                name: "HID manager open failed \(openResult)",
+                name: "HID manager open failed \(Self.returnName(openResult))",
                 rawXYEnabled: false
             ))
             return
         }
 
+        nextOpenAttemptAt = .distantPast
         manager = newManager
         IOHIDManagerScheduleWithRunLoop(newManager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
     }
@@ -94,6 +107,7 @@ public final class HIDDeviceManager {
             IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
         }
         manager = nil
+        nextOpenAttemptAt = .distantPast
         onStatusChanged?(HIDDeviceStatus(connected: false, name: "Not connected", rawXYEnabled: false))
     }
 
@@ -166,6 +180,28 @@ public final class HIDDeviceManager {
 
     private static func key(for device: IOHIDDevice) -> Int {
         Int(bitPattern: Unmanaged.passUnretained(device).toOpaque())
+    }
+
+    private static func matchedDescriptors(manager: IOHIDManager) -> [HIDDeviceDescriptor] {
+        guard let devices = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice> else { return [] }
+        return devices
+            .map(HIDDeviceDescriptor.init)
+            .sorted { $0.summary < $1.summary }
+    }
+
+    private static func returnName(_ result: IOReturn) -> String {
+        switch result {
+        case kIOReturnExclusiveAccess:
+            return "kIOReturnExclusiveAccess"
+        case kIOReturnNotPermitted:
+            return "kIOReturnNotPermitted"
+        case kIOReturnNotPrivileged:
+            return "kIOReturnNotPrivileged"
+        case kIOReturnBusy:
+            return "kIOReturnBusy"
+        default:
+            return "\(result)"
+        }
     }
 
     private static let deviceMatched: IOHIDDeviceCallback = { context, _, _, device in

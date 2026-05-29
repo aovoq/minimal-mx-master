@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import IOKit.hid
 
 public enum PermissionManager {
     public static var isAccessibilityTrusted: Bool {
@@ -7,7 +8,7 @@ public enum PermissionManager {
     }
 
     public static var isInputMonitoringTrusted: Bool {
-        CGPreflightListenEventAccess()
+        IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
     }
 
     public static var requiredPermissionsGranted: Bool {
@@ -22,7 +23,7 @@ public enum PermissionManager {
 
     @discardableResult
     public static func requestInputMonitoringPrompt() -> Bool {
-        CGRequestListenEventAccess()
+        IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
     }
 
     public static func openAccessibilitySettings() {

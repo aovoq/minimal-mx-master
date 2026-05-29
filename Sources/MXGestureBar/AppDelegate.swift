@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var holdReleaseTimer: Timer?
     private var hidStatus = HIDDeviceStatus(connected: false, name: "Not connected", rawXYEnabled: false)
     private var captureServicesActive = false
+    private var lastRawXYSignalAt: TimeInterval?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         wireCallbacks()
@@ -77,7 +78,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return GestureInputPolicy(
                 isEnabled: self.config.enabled,
                 hidStatus: self.hidStatus,
-                isHolding: self.recognizer.isHolding
+                isHolding: self.recognizer.isHolding,
+                rawXYFallbackActive: self.rawXYFallbackActive
             )
         }
         eventTap.onDelta = { [weak self] dx, dy in
@@ -127,14 +129,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleGestureSignal(_ signal: HIDGestureSignal) {
+        if case .rawXY = signal {
+            lastRawXYSignalAt = Date().timeIntervalSinceReferenceDate
+        }
         recognizer.handle(signal)
         if signal == .buttonDown {
+            lastRawXYSignalAt = nil
             scheduleHoldFailsafe()
             DispatchQueue.main.async { [weak self] in self?.menu.setHolding(true) }
         } else if signal == .buttonUp {
+            lastRawXYSignalAt = nil
             holdReleaseTimer?.invalidate()
             holdReleaseTimer = nil
         }
+    }
+
+    private var rawXYFallbackActive: Bool {
+        guard hidStatus.gestureConfigured, hidStatus.rawXYEnabled, recognizer.isHolding else {
+            return false
+        }
+        guard let lastRawXYSignalAt else { return true }
+        return Date().timeIntervalSinceReferenceDate - lastRawXYSignalAt > 0.15
     }
 
     private func scheduleHoldFailsafe() {

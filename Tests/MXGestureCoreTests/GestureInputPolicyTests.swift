@@ -59,4 +59,17 @@ final class GestureInputPolicyTests: XCTestCase {
         XCTAssertFalse(policy.usesMovementFallback)
         XCTAssertTrue(policy.blocksMovement)
     }
+
+    func testHIDRawXYCanUseMovementFallbackWhileStillBlockingCursorMovement() {
+        let policy = GestureInputPolicy(
+            isEnabled: true,
+            hidStatus: .init(connected: true, name: "MX", rawXYEnabled: true, gestureConfigured: true),
+            isHolding: true,
+            rawXYFallbackActive: true
+        )
+
+        XCTAssertEqual(policy.mode, .hidRawXYWithMovementFallback)
+        XCTAssertTrue(policy.usesMovementFallback)
+        XCTAssertTrue(policy.blocksMovement)
+    }
 }
