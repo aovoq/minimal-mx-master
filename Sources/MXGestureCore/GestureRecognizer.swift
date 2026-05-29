@@ -99,7 +99,7 @@ public final class GestureRecognizer {
             }
             enterCooldown(now: now)
         case .triggered:
-            enterCooldown(now: now)
+            finishHold()
         default:
             break
         }
@@ -141,6 +141,11 @@ public final class GestureRecognizer {
 
     private func enterCooldown(now: TimeInterval) {
         phase = .cooldown(until: now + settings.cooldownMs / 1000)
+        onHoldChanged?(false)
+    }
+
+    private func finishHold() {
+        phase = .idle
         onHoldChanged?(false)
     }
 
