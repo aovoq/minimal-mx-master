@@ -12,6 +12,39 @@ public struct HIDDeviceStatus: Equatable {
         rawXYEnabled: false
     )
 
+    public static func hidBusyFallback(deviceName: String) -> HIDDeviceStatus {
+        HIDDeviceStatus(
+            connected: true,
+            name: "\(deviceName) (HID busy; fallback)",
+            rawXYEnabled: false
+        )
+    }
+
+    public static func openFailed(returnName: String) -> HIDDeviceStatus {
+        HIDDeviceStatus(
+            connected: false,
+            name: "HID manager open failed \(returnName)",
+            rawXYEnabled: false
+        )
+    }
+
+    public static func noGestureCID(deviceName: String) -> HIDDeviceStatus {
+        HIDDeviceStatus(
+            connected: true,
+            name: "\(deviceName) (no gesture CID)",
+            rawXYEnabled: false
+        )
+    }
+
+    public static func configured(deviceName: String, configuration: ReprogConfiguration) -> HIDDeviceStatus {
+        HIDDeviceStatus(
+            connected: true,
+            name: "\(deviceName) CID 0x\(String(configuration.control.cid, radix: 16))",
+            rawXYEnabled: configuration.rawXYEnabled,
+            gestureConfigured: true
+        )
+    }
+
     public init(
         connected: Bool,
         name: String,

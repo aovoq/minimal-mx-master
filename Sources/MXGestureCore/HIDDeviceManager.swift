@@ -93,19 +93,11 @@ public final class HIDDeviceManager {
         IOHIDManagerClose(newManager, IOOptionBits(kIOHIDOptionsTypeNone))
 
         if result == kIOReturnExclusiveAccess, let descriptor = descriptors.first {
-            publishStatus(HIDDeviceStatus(
-                connected: true,
-                name: "\(descriptor.name) (HID busy; fallback)",
-                rawXYEnabled: false
-            ))
+            publishStatus(.hidBusyFallback(deviceName: descriptor.name))
             return
         }
 
-        publishStatus(HIDDeviceStatus(
-            connected: false,
-            name: "HID manager open failed \(Self.returnName(result))",
-            rawXYEnabled: false
-        ))
+        publishStatus(.openFailed(returnName: Self.returnName(result)))
     }
 
     func matched(device: IOHIDDevice) {
@@ -150,22 +142,13 @@ public final class HIDDeviceManager {
             guard let self, let session else { return }
             guard let configuration = session.client.configureGesture() else {
                 guard self.containsSession(session, key: key) else { return }
-                self.publishStatus(HIDDeviceStatus(
-                    connected: true,
-                    name: "\(session.name) (no gesture CID)",
-                    rawXYEnabled: false
-                ))
+                self.publishStatus(.noGestureCID(deviceName: session.name))
                 return
             }
 
             guard self.containsSession(session, key: key) else { return }
             self.lock.withLock { self.activeKey = key }
-            self.publishStatus(HIDDeviceStatus(
-                connected: true,
-                name: "\(session.name) CID 0x\(String(configuration.control.cid, radix: 16))",
-                rawXYEnabled: configuration.rawXYEnabled,
-                gestureConfigured: true
-            ))
+            self.publishStatus(.configured(deviceName: session.name, configuration: configuration))
         }
     }
 

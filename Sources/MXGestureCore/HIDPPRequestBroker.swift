@@ -2,6 +2,8 @@ import Foundation
 import IOKit.hid
 
 final class HIDPPRequestBroker: HIDPPTransport {
+    private static let responseTimeout: DispatchTimeInterval = .milliseconds(350)
+
     private final class PendingRequest {
         let key: HIDPPRequestKey
         let semaphore = DispatchSemaphore(value: 0)
@@ -54,23 +56,11 @@ final class HIDPPRequestBroker: HIDPPTransport {
         lock.withLock { pending[request.key] = request }
         defer { removePending(request) }
 
-        let bytes = message.bytes
-        let result = bytes.withUnsafeBufferPointer { buffer in
-            guard let baseAddress = buffer.baseAddress else { return kIOReturnBadArgument }
-            return IOHIDDeviceSetReport(
-                device,
-                kIOHIDReportTypeOutput,
-                CFIndex(message.reportID),
-                baseAddress,
-                CFIndex(bytes.count)
-            )
-        }
-
-        guard result == kIOReturnSuccess else {
+        guard write(message) else {
             return nil
         }
 
-        guard request.semaphore.wait(timeout: .now() + .milliseconds(350)) == .success else {
+        guard request.semaphore.wait(timeout: .now() + Self.responseTimeout) == .success else {
             return nil
         }
         return request.response
@@ -105,6 +95,19 @@ final class HIDPPRequestBroker: HIDPPTransport {
             function: function,
             params: params
         )
+        return write(message)
+    }
+
+    func resolve(_ message: HIDPPMessage) -> Bool {
+        lock.withLock {
+            guard let request = pending.removeValue(forKey: message.requestKey) else { return false }
+            request.response = message
+            request.semaphore.signal()
+            return true
+        }
+    }
+
+    private func write(_ message: HIDPPMessage) -> Bool {
         let bytes = message.bytes
         let result = bytes.withUnsafeBufferPointer { buffer in
             guard let baseAddress = buffer.baseAddress else { return kIOReturnBadArgument }
@@ -119,29 +122,11 @@ final class HIDPPRequestBroker: HIDPPTransport {
         return result == kIOReturnSuccess
     }
 
-    func resolve(_ message: HIDPPMessage) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-
-        guard let request = pending.removeValue(forKey: message.requestKey) else { return false }
-        request.response = message
-        request.semaphore.signal()
-        return true
-    }
-
     private func removePending(_ request: PendingRequest) {
         lock.withLock {
             if pending[request.key] === request {
                 pending.removeValue(forKey: request.key)
             }
         }
-    }
-}
-
-private extension NSLock {
-    func withLock<T>(_ body: () -> T) -> T {
-        lock()
-        defer { unlock() }
-        return body()
     }
 }
