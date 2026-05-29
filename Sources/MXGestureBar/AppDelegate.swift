@@ -83,6 +83,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         eventTap.onButtonSignal = { [weak self] signal in
             self?.handleGestureSignal(signal)
         }
+        eventTap.onPanicRelease = { [weak self] in
+            // Watchdog tripped — the tap was dropping movement for too long.
+            // Force-release on the main thread to clear `isHolding` and prevent
+            // any further drops. The user keeps cursor freedom no matter what.
+            DispatchQueue.main.async {
+                AppLog.gesture.error("Panic release fired from EventTap watchdog")
+                self?.recognizer.forceRelease()
+                self?.menu.setHolding(false)
+                self?.holdReleaseTimer?.invalidate()
+                self?.holdReleaseTimer = nil
+            }
+        }
 
         menu.onToggleEnabled = { [weak self] enabled in
             self?.setEnabled(enabled)

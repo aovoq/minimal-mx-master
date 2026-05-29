@@ -2,16 +2,34 @@ import CoreGraphics
 import Foundation
 
 public final class EventTapController {
+    /// Hard ceiling on how long we may keep dropping movement events before we
+    /// abandon the gesture and restore cursor freedom. Protects the user from
+    /// being locked out if `isHolding` ever fails to clear (HID disconnect,
+    /// missed buttonUp, runaway state, etc.).
+    public static let maxDropDurationSeconds: TimeInterval = 1.2
+
     public var policy: () -> GestureInputPolicy = {
         GestureInputPolicy(mode: .disabled, isHolding: false)
     }
     public var onDelta: (Int, Int) -> Void = { _, _ in }
     public var onButtonSignal: (HIDGestureSignal) -> Void = { _ in }
+    /// Fired when the safety watchdog forces a release because movement has
+    /// been dropped for too long without `buttonUp`.
+    public var onPanicRelease: () -> Void = {}
 
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
+    private let currentTime: () -> TimeInterval
+    private var dropStartedAt: TimeInterval?
+    private var panicLatched = false
 
-    public init() {}
+    public convenience init() {
+        self.init(currentTime: CFAbsoluteTimeGetCurrent)
+    }
+
+    init(currentTime: @escaping () -> TimeInterval) {
+        self.currentTime = currentTime
+    }
 
     @discardableResult
     public func start() -> Bool {
@@ -54,11 +72,17 @@ public final class EventTapController {
         }
         source = nil
         tap = nil
+        dropStartedAt = nil
+        panicLatched = false
     }
 
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
+            // Tap was disabled while in the event stream. Assume any in-flight
+            // gesture is stale and force the recognizer out of hold state.
+            AppLog.gesture.error("EventTap disabled by system/user input; forcing release")
+            tripPanicRelease()
             return Unmanaged.passUnretained(event)
         }
 
@@ -66,18 +90,29 @@ public final class EventTapController {
             return Unmanaged.passUnretained(event)
         }
 
+        let inputPolicy = policy()
+
+        // Fail-safe #1: when disabled, never touch any event.
+        if inputPolicy.mode == .disabled {
+            resetDropTracking()
+            return Unmanaged.passUnretained(event)
+        }
+
         if type == .otherMouseDown || type == .otherMouseUp {
             let button = Int(event.getIntegerValueField(.mouseEventButtonNumber))
             AppLog.gesture.info("Other mouse \(type.rawValue) button \(button)")
-            guard policy().usesButtonFallback, button >= 3 else {
-                return Unmanaged.passUnretained(event)
+            // Only emit a fallback signal for buttons we conceivably care about.
+            // CRITICAL: never drop the event. We have no way to know whether the
+            // press came from the MX Master vs. another device, so swallowing
+            // would steal e.g. back/forward buttons from unrelated mice.
+            if inputPolicy.usesButtonFallback, button >= 3 {
+                onButtonSignal(type == .otherMouseDown ? .buttonDown : .buttonUp)
             }
-            onButtonSignal(type == .otherMouseDown ? .buttonDown : .buttonUp)
-            return nil
+            return Unmanaged.passUnretained(event)
         }
 
-        let inputPolicy = policy()
         guard inputPolicy.capturesMovement else {
+            resetDropTracking()
             return Unmanaged.passUnretained(event)
         }
 
@@ -88,7 +123,51 @@ public final class EventTapController {
                 onDelta(dx, dy)
             }
         }
-        return inputPolicy.blocksMovement ? nil : Unmanaged.passUnretained(event)
+
+        guard inputPolicy.blocksMovement else {
+            resetDropTracking()
+            return Unmanaged.passUnretained(event)
+        }
+
+        // We are about to drop a cursor-movement event. Track how long we have
+        // been doing this consecutively. If the watchdog trips, give up and
+        // restore cursor freedom — the user must never be locked out.
+        let now = currentTime()
+        if dropStartedAt == nil { dropStartedAt = now }
+
+        if let started = dropStartedAt,
+           now - started > Self.maxDropDurationSeconds,
+           !panicLatched {
+            AppLog.gesture.error(
+                "EventTap watchdog: movement dropped for \(now - started)s; forcing release"
+            )
+            tripPanicRelease()
+            // Let this event through too.
+            return Unmanaged.passUnretained(event)
+        }
+
+        if panicLatched {
+            // Stay open until policy stops requesting drops (i.e. buttonUp).
+            return Unmanaged.passUnretained(event)
+        }
+
+        return nil
+    }
+
+    func handleForTesting(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        handle(type: type, event: event)
+    }
+
+    private func tripPanicRelease() {
+        dropStartedAt = nil
+        guard !panicLatched else { return }
+        panicLatched = true
+        onPanicRelease()
+    }
+
+    private func resetDropTracking() {
+        dropStartedAt = nil
+        panicLatched = false
     }
 
     private static let callback: CGEventTapCallBack = { _, type, event, userInfo in

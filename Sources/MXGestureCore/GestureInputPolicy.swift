@@ -30,8 +30,15 @@ public struct GestureInputPolicy: Equatable {
 
         if hidStatus.gestureConfigured {
             mode = hidStatus.rawXYEnabled ? .hidRawXY : .hidButtonOnly
-        } else {
+        } else if hidStatus.connected {
+            // Device is present but we couldn't program it (unknown firmware,
+            // permission glitch, etc.). Fallback can still be useful.
             mode = .eventTapFallback
+        } else {
+            // No supported device present. Stay completely passive — don't
+            // touch input. This prevents stealing buttons from other devices
+            // and the cascade of failures that follows.
+            mode = .disabled
         }
     }
 
