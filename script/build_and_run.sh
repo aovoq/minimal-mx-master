@@ -47,8 +47,6 @@ cat >"$INFO_PLIST" <<PLIST
   <string>NSApplication</string>
   <key>NSInputMonitoringUsageDescription</key>
   <string>MXGestureBar needs input monitoring to read the MX Master HID++ gesture reports.</string>
-  <key>NSAppleEventsUsageDescription</key>
-  <string>MXGestureBar uses System Events to trigger Mission Control space switching shortcuts.</string>
 </dict>
 </plist>
 PLIST

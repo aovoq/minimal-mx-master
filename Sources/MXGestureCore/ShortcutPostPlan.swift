@@ -28,9 +28,12 @@ struct ShortcutPostPlan {
                 actions.append(.unsupportedKey(key))
                 continue
             }
-            actions.append(.key(keyCode, down: true, flags: flags))
+            // Only the key itself gets the implicit flags; a real ⌃← reports
+            // the fn bit on the arrow event, not on the control press.
+            let keyFlags = flags.union(ShortcutKeyMap.implicitFlags(for: key))
+            actions.append(.key(keyCode, down: true, flags: keyFlags))
             actions.append(.pause(Self.keyPressInterval))
-            actions.append(.key(keyCode, down: false, flags: flags))
+            actions.append(.key(keyCode, down: false, flags: keyFlags))
         }
 
         actions.append(contentsOf: modifierCodes.reversed().map { .key($0, down: false, flags: []) })

@@ -13,7 +13,6 @@ public final class ActionExecutor {
         self.config = config
         self.enabled = config.enabled
         eventSource?.localEventsSuppressionInterval = 0
-        SystemEventsShortcutExecutor.prepare()
     }
 
     public func update(config: AppConfig) {
@@ -32,9 +31,6 @@ public final class ActionExecutor {
     private func executeOnQueue(_ event: GestureEvent) {
         guard enabled, let shortcut = config.shortcut(for: event) else { return }
         AppLog.gesture.info("Execute \(event.rawValue, privacy: .public) -> \(shortcut.displayName, privacy: .public)")
-        if SystemEventsShortcutExecutor.execute(shortcut) {
-            return
-        }
         post(shortcut)
     }
 

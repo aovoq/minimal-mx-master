@@ -25,7 +25,6 @@ APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
-ENTITLEMENTS="$ROOT_DIR/script/MXGestureBar.entitlements"
 ZIP_PATH="$DIST_DIR/${APP_NAME}-${VERSION}.zip"
 DMG_PATH="$DIST_DIR/${APP_NAME}-${VERSION}.dmg"
 
@@ -57,15 +56,12 @@ cat >"$INFO_PLIST" <<PLIST
   <key>NSHumanReadableCopyright</key><string>Copyright © 2026 ao hirata. All rights reserved.</string>
   <key>NSInputMonitoringUsageDescription</key>
   <string>MXGestureBar needs input monitoring to read MX Master HID++ gesture reports.</string>
-  <key>NSAppleEventsUsageDescription</key>
-  <string>MXGestureBar uses System Events to trigger Mission Control space-switching shortcuts.</string>
 </dict>
 </plist>
 PLIST
 
 echo "==> codesign (Developer ID + Hardened Runtime)"
 /usr/bin/codesign --force --timestamp --options runtime \
-  --entitlements "$ENTITLEMENTS" \
   --sign "$SIGN_ID" \
   "$APP_BUNDLE"
 

@@ -50,6 +50,23 @@ public enum ShortcutKeyMap {
         }
     }
 
+    /// Flags macOS puts on a real press of `key` regardless of which modifiers
+    /// the user asked for.
+    ///
+    /// Arrow keys are reported as function keys, and WindowServer refuses to
+    /// match a symbolic hotkey — Mission Control's ⌃← / ⌃→ among them — unless
+    /// `.maskSecondaryFn` is set. Sending plain `.maskControl` still delivers
+    /// the key to the focused app, so the shortcut looks like it fired while no
+    /// space ever moves. `.maskNumericPad` is not needed for the match but a
+    /// hardware arrow key carries it, so include it to keep the synthesized
+    /// event indistinguishable from the real one.
+    public static func implicitFlags(for key: String) -> CGEventFlags {
+        switch key.lowercased() {
+        case "left", "right", "up", "down": return [.maskSecondaryFn, .maskNumericPad]
+        default: return []
+        }
+    }
+
     public static func isModifier(_ key: String) -> Bool {
         ["cmd", "command", "shift", "ctrl", "control", "alt", "option", "fn", "function"]
             .contains(key.lowercased())
