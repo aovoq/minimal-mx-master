@@ -8,15 +8,60 @@ set -euo pipefail
 #   2. xcrun notarytool store-credentials "MXGestureBar-notary" --apple-id ... --team-id XDZ7L87T5C --password ...
 #
 # Usage:
+#   script/release.sh
+#   script/release.sh --install
 #   script/release.sh 1.0.0
+#   script/release.sh 1.0.0 --install
+#
+# If version is omitted, uses the installed /Applications app's
+# CFBundleShortVersionString + 0.0.1 (semver patch).
 
-VERSION="${1:?usage: release.sh <version> (e.g. 1.0.0)}"
+usage() {
+  echo "usage: release.sh [version] [--install] (e.g. 1.0.0)" >&2
+  echo "  if version is omitted, uses the installed app's version + 0.0.1" >&2
+  exit 1
+}
+
+INSTALL=0
+VERSION=""
+for arg in "$@"; do
+  case "$arg" in
+    --install) INSTALL=1 ;;
+    -*) usage ;;
+    *)
+      [[ -z "$VERSION" ]] || usage
+      VERSION="$arg"
+      ;;
+  esac
+done
+
 APP_NAME="MXGestureBar"
 BUNDLE_ID="dev.aovoq.MXGestureBar"
 TEAM_ID="XDZ7L87T5C"
 SIGN_ID="Developer ID Application: ao hirata (${TEAM_ID})"
 NOTARY_PROFILE="Local Notary"
 MIN_SYSTEM_VERSION="13.0"
+INSTALL_APP="/Applications/$APP_NAME.app"
+
+if [[ -z "$VERSION" ]]; then
+  PLIST="$INSTALL_APP/Contents/Info.plist"
+  if [[ ! -d "$INSTALL_APP" || ! -f "$PLIST" ]]; then
+    echo "error: $APP_NAME is not installed at $INSTALL_APP" >&2
+    echo "error: pass a version explicitly (e.g. script/release.sh 1.0.0)" >&2
+    exit 1
+  fi
+  INSTALLED="$(/usr/bin/defaults read "$PLIST" CFBundleShortVersionString 2>/dev/null || true)"
+  if [[ -z "$INSTALLED" ]]; then
+    echo "error: could not read CFBundleShortVersionString from $PLIST" >&2
+    exit 1
+  fi
+  if [[ ! "$INSTALLED" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+    echo "error: installed version is not X.Y.Z: $INSTALLED" >&2
+    exit 1
+  fi
+  VERSION="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((10#${BASH_REMATCH[3]} + 1))"
+  echo "==> Version $VERSION (installed $INSTALLED + 0.0.1)"
+fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
@@ -101,11 +146,36 @@ xcrun notarytool submit "$DMG_PATH" \
   --wait
 xcrun stapler staple "$DMG_PATH"
 
+if [[ "$INSTALL" -eq 1 ]]; then
+  echo "==> Quit running $APP_NAME"
+  pkill -x "$APP_NAME" >/dev/null 2>&1 || true
+  for _ in {1..50}; do
+    pgrep -x "$APP_NAME" >/dev/null || break
+    sleep 0.1
+  done
+  if pgrep -x "$APP_NAME" >/dev/null; then
+    pkill -KILL -x "$APP_NAME" >/dev/null 2>&1 || true
+    sleep 0.2
+  fi
+  if pgrep -x "$APP_NAME" >/dev/null; then
+    echo "error: $APP_NAME is still running" >&2
+    exit 1
+  fi
+
+  echo "==> Install to $INSTALL_APP"
+  rm -rf "$INSTALL_APP"
+  /usr/bin/ditto "$APP_BUNDLE" "$INSTALL_APP"
+  /usr/bin/open "$INSTALL_APP"
+fi
+
 echo
 echo "Done."
 echo "  App: $APP_BUNDLE"
 echo "  Zip: $ZIP_PATH"
 echo "  Dmg: $DMG_PATH"
+if [[ "$INSTALL" -eq 1 ]]; then
+  echo "  Installed: $INSTALL_APP"
+fi
 echo
 echo "Sanity check:"
 echo "  spctl --assess -vv --type execute \"$APP_BUNDLE\""
