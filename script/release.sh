@@ -8,11 +8,17 @@ set -euo pipefail
 #   2. xcrun notarytool store-credentials "MXGestureBar-notary" --apple-id ... --team-id XDZ7L87T5C --password ...
 #
 # Usage:
+#   script/release.sh
+#   script/release.sh --install
 #   script/release.sh 1.0.0
 #   script/release.sh 1.0.0 --install
+#
+# If version is omitted, uses the installed /Applications app's
+# CFBundleShortVersionString + 0.0.1 (semver patch).
 
 usage() {
-  echo "usage: release.sh <version> [--install] (e.g. 1.0.0)" >&2
+  echo "usage: release.sh [version] [--install] (e.g. 1.0.0)" >&2
+  echo "  if version is omitted, uses the installed app's version + 0.0.1" >&2
   exit 1
 }
 
@@ -28,7 +34,6 @@ for arg in "$@"; do
       ;;
   esac
 done
-[[ -n "$VERSION" ]] || usage
 
 APP_NAME="MXGestureBar"
 BUNDLE_ID="dev.aovoq.MXGestureBar"
@@ -36,6 +41,27 @@ TEAM_ID="XDZ7L87T5C"
 SIGN_ID="Developer ID Application: ao hirata (${TEAM_ID})"
 NOTARY_PROFILE="Local Notary"
 MIN_SYSTEM_VERSION="13.0"
+INSTALL_APP="/Applications/$APP_NAME.app"
+
+if [[ -z "$VERSION" ]]; then
+  PLIST="$INSTALL_APP/Contents/Info.plist"
+  if [[ ! -d "$INSTALL_APP" || ! -f "$PLIST" ]]; then
+    echo "error: $APP_NAME is not installed at $INSTALL_APP" >&2
+    echo "error: pass a version explicitly (e.g. script/release.sh 1.0.0)" >&2
+    exit 1
+  fi
+  INSTALLED="$(/usr/bin/defaults read "$PLIST" CFBundleShortVersionString 2>/dev/null || true)"
+  if [[ -z "$INSTALLED" ]]; then
+    echo "error: could not read CFBundleShortVersionString from $PLIST" >&2
+    exit 1
+  fi
+  if [[ ! "$INSTALLED" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+    echo "error: installed version is not X.Y.Z: $INSTALLED" >&2
+    exit 1
+  fi
+  VERSION="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((10#${BASH_REMATCH[3]} + 1))"
+  echo "==> Version $VERSION (installed $INSTALLED + 0.0.1)"
+fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
@@ -136,7 +162,6 @@ if [[ "$INSTALL" -eq 1 ]]; then
     exit 1
   fi
 
-  INSTALL_APP="/Applications/$APP_NAME.app"
   echo "==> Install to $INSTALL_APP"
   rm -rf "$INSTALL_APP"
   /usr/bin/ditto "$APP_BUNDLE" "$INSTALL_APP"
@@ -149,7 +174,7 @@ echo "  App: $APP_BUNDLE"
 echo "  Zip: $ZIP_PATH"
 echo "  Dmg: $DMG_PATH"
 if [[ "$INSTALL" -eq 1 ]]; then
-  echo "  Installed: /Applications/$APP_NAME.app"
+  echo "  Installed: $INSTALL_APP"
 fi
 echo
 echo "Sanity check:"
