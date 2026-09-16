@@ -34,6 +34,8 @@ final class SettingsWindowController: NSWindowController {
 
         let host = NSHostingView(rootView: SettingsView(model: model))
         host.sizingOptions = []
+        host.wantsLayer = true
+        host.layer?.backgroundColor = NSColor.clear.cgColor
         window.contentView = host
     }
 

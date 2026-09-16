@@ -4,6 +4,7 @@ import MXGestureCore
 
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 0) {
@@ -11,16 +12,16 @@ struct SettingsView: View {
                 .frame(width: 168)
                 .frame(maxHeight: .infinity, alignment: .top)
                 .background {
-                    VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
+                    (colorScheme == .dark ? Color.black.opacity(0.10) : Color.black.opacity(0.028))
                         .ignoresSafeArea()
                 }
 
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background {
-                    VisualEffectView(material: .underWindowBackground, blendingMode: .behindWindow)
-                        .ignoresSafeArea()
-                }
+        }
+        .background {
+            VisualEffectView(material: .underWindowBackground, blendingMode: .behindWindow)
+                .ignoresSafeArea()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -207,7 +208,7 @@ struct SettingsView: View {
 
     private var footer: some View {
         VStack(spacing: 0) {
-            Color(nsColor: .separatorColor)
+            Color.primary.opacity(0.06)
                 .frame(height: 1)
 
             HStack(spacing: 12) {
@@ -249,10 +250,11 @@ private struct SidebarLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 8) {
             configuration.icon
-                .imageScale(.medium)
-                .frame(width: 18, alignment: .center)
+                .font(.system(size: 13))
+                .symbolRenderingMode(.monochrome)
+                .frame(width: 18, height: 16, alignment: .center)
             configuration.title
-            Spacer(minLength: 0)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
