@@ -4,6 +4,7 @@ import MXGestureCore
 
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 0) {
@@ -11,20 +12,16 @@ struct SettingsView: View {
                 .frame(width: 168)
                 .frame(maxHeight: .infinity, alignment: .top)
                 .background {
-                    VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
+                    (colorScheme == .dark ? Color.black.opacity(0.10) : Color.black.opacity(0.028))
                         .ignoresSafeArea()
                 }
-
-            Color(nsColor: .separatorColor)
-                .frame(width: 1)
-                .ignoresSafeArea()
 
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background {
-                    VisualEffectView(material: .underWindowBackground, blendingMode: .behindWindow)
-                        .ignoresSafeArea()
-                }
+        }
+        .background {
+            VisualEffectView(material: .underWindowBackground, blendingMode: .behindWindow)
+                .ignoresSafeArea()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -47,7 +44,7 @@ struct SettingsView: View {
             model.pane = pane
         } label: {
             Label(pane.title, systemImage: pane.symbol)
-                .labelStyle(.titleAndIcon)
+                .labelStyle(SidebarLabelStyle())
                 .font(.system(size: 13, weight: selected ? .medium : .regular))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 8)
@@ -69,11 +66,13 @@ struct SettingsView: View {
                     switch model.pane {
                     case .buttons:
                         buttonsPane
-                    case .shortcuts:
-                        shortcutsPane
+                    case .gestures:
+                        gesturesPane
+                    case .wheels:
+                        wheelsPane
                     }
                 }
-                .frame(maxWidth: 540, alignment: .leading)
+                .frame(maxWidth: 560, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 22)
                 .padding(.top, 16)
@@ -86,8 +85,8 @@ struct SettingsView: View {
 
     private var buttonsPane: some View {
         paneLayout(
-            title: "Gesture buttons",
-            subtitle: "Buttons that start a gesture hold. Left and right click stay reserved."
+            title: "Buttons",
+            subtitle: "What each button does. Gesture starts a hold with that button’s own swipe map. Diverting replaces the native click; left and right stay native unless the mouse can divert them."
         ) {
             SettingsCard {
                 ForEach(Array(GestureButtonCatalog.options.enumerated()), id: \.element.id) { index, option in
@@ -95,35 +94,94 @@ struct SettingsView: View {
                         SettingsRowDivider()
                     }
                     SettingsRow(title: option.title, symbol: symbol(forButton: option.id)) {
-                        Toggle("", isOn: model.buttonBinding(for: option))
-                            .toggleStyle(.switch)
-                            .controlSize(.small)
+                        HStack(alignment: .center, spacing: 8) {
+                            if model.assignments[option.id]?.action == .shortcut {
+                                VStack(alignment: .trailing, spacing: 2) {
+                                    ShortcutRecorder(
+                                        shortcut: model.clickShortcutBinding(for: option),
+                                        accessibilityLabel: "\(option.title) shortcut"
+                                    )
+                                    .frame(width: 108, height: 22)
+                                    IssueCaption(issue: model.clickIssue(for: option))
+                                }
+                            }
+                            Picker("", selection: model.actionBinding(for: option)) {
+                                ForEach(ButtonAction.allCases, id: \.self) { action in
+                                    Text(action.title).tag(action)
+                                }
+                            }
+                            .pickerStyle(.menu)
                             .labelsHidden()
+                            .frame(width: 112)
                             .accessibilityLabel(option.title)
+                        }
                     }
                 }
             }
         }
     }
 
-    private var shortcutsPane: some View {
+    private var gesturesPane: some View {
         paneLayout(
-            title: "Shortcuts",
-            subtitle: "Fired on click and swipe. Use modifier+key, like ctrl+left."
+            title: "Gestures",
+            subtitle: "Record a shortcut for click and each swipe. Back, Gesture, and Smart Shift can each have a different map."
+        ) {
+            if model.gestureMapButtonIDs.isEmpty {
+                SettingsCard {
+                    SettingsRow(title: "No gesture buttons", symbol: "hand.draw") {
+                        Text("Set a button to Gesture")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                SettingsCard {
+                    SettingsRow(title: "Button", symbol: "computermouse") {
+                        Picker("", selection: $model.gestureMapButtonID) {
+                            ForEach(model.gestureMapButtonIDs, id: \.self) { id in
+                                Text(GestureButtonCatalog.option(id: id)?.title ?? id).tag(id)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 140)
+                        .accessibilityLabel("Gesture button")
+                    }
+                }
+
+                SettingsCard {
+                    GesturePadView(model: model)
+                }
+            }
+        }
+    }
+
+    private var wheelsPane: some View {
+        paneLayout(
+            title: "Wheels",
+            subtitle: "Rotation direction for the main scroll wheel and the thumb wheel. Inverted uses the mouse HID++ invert flag when the device exposes it."
         ) {
             SettingsCard {
-                ForEach(Array(GestureEvent.allCases.enumerated()), id: \.element) { index, event in
-                    if index > 0 {
-                        SettingsRowDivider()
+                SettingsRow(title: "Main wheel", symbol: "arrow.up.arrow.down") {
+                    Picker("", selection: $model.invertMainWheel) {
+                        Text("Default").tag(false)
+                        Text("Inverted").tag(true)
                     }
-                    SettingsRow(title: event.rawValue.capitalized, symbol: symbol(forEvent: event)) {
-                        ShortcutField(
-                            text: model.shortcutBinding(for: event),
-                            placeholder: "ctrl+left",
-                            accessibilityLabel: event.rawValue
-                        )
-                        .frame(width: 176, height: 22)
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(width: 112)
+                    .accessibilityLabel("Main wheel direction")
+                }
+                SettingsRowDivider()
+                SettingsRow(title: "Thumb wheel", symbol: "arrow.left.arrow.right") {
+                    Picker("", selection: $model.invertThumbWheel) {
+                        Text("Default").tag(false)
+                        Text("Inverted").tag(true)
                     }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(width: 112)
+                    .accessibilityLabel("Thumb wheel direction")
                 }
             }
         }
@@ -150,7 +208,7 @@ struct SettingsView: View {
 
     private var footer: some View {
         VStack(spacing: 0) {
-            Color(nsColor: .separatorColor)
+            Color.primary.opacity(0.06)
                 .frame(height: 1)
 
             HStack(spacing: 12) {
@@ -167,6 +225,7 @@ struct SettingsView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
                 .keyboardShortcut(.defaultAction)
+                .disabled(!model.canSave)
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 10)
@@ -178,19 +237,24 @@ struct SettingsView: View {
         case "gesture": return "hand.draw"
         case "back": return "chevron.left"
         case "forward": return "chevron.right"
+        case "left": return "computermouse"
         case "middle": return "circle"
+        case "right": return "computermouse.fill"
         case "smartShift": return "arrow.up.arrow.down"
         default: return "button.horizontal"
         }
     }
+}
 
-    private func symbol(forEvent event: GestureEvent) -> String {
-        switch event {
-        case .click: return "dot.circle"
-        case .up: return "arrow.up"
-        case .down: return "arrow.down"
-        case .left: return "arrow.left"
-        case .right: return "arrow.right"
+private struct SidebarLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 8) {
+            configuration.icon
+                .font(.system(size: 13))
+                .symbolRenderingMode(.monochrome)
+                .frame(width: 18, height: 16, alignment: .center)
+            configuration.title
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -232,6 +296,7 @@ private struct SettingsRow<Trailing: View>: View {
             trailing()
         }
         .padding(.horizontal, 12)
+        .padding(.vertical, 6)
         .frame(minHeight: 34)
     }
 }
@@ -244,48 +309,81 @@ private struct SettingsRowDivider: View {
     }
 }
 
-private struct ShortcutField: NSViewRepresentable {
-    @Binding var text: String
-    var placeholder: String
-    var accessibilityLabel: String
+private struct IssueCaption: View {
+    var issue: ShortcutFieldIssue?
 
-    func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField(string: text)
-        field.placeholderString = placeholder
-        field.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        field.bezelStyle = .roundedBezel
-        field.controlSize = .small
-        field.focusRingType = .default
-        field.delegate = context.coordinator
-        field.setAccessibilityLabel(accessibilityLabel)
-        field.lineBreakMode = .byTruncatingTail
-        field.cell?.usesSingleLineMode = true
-        field.cell?.sendsActionOnEndEditing = true
-        return field
+    var body: some View {
+        Text(issue?.message ?? " ")
+            .font(.system(size: 11))
+            .foregroundStyle(issue == nil ? Color.clear : Color.red)
+            .frame(minHeight: 14)
+            .accessibilityHidden(issue == nil)
     }
+}
 
-    func updateNSView(_ field: NSTextField, context: Context) {
-        if field.currentEditor() == nil, field.stringValue != text {
-            field.stringValue = text
+private struct GesturePadView: View {
+    @ObservedObject var model: SettingsModel
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.primary.opacity(0.045))
+                .frame(width: 92, height: 268)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.primary.opacity(0.045))
+                .frame(width: 320, height: 92)
+
+            VStack(spacing: 14) {
+                padSlot(.up)
+                HStack(spacing: 18) {
+                    padSlot(.left)
+                    padSlot(.click)
+                    padSlot(.right)
+                }
+                padSlot(.down)
+            }
+            .padding(.vertical, 18)
         }
-        field.placeholderString = placeholder
-        field.setAccessibilityLabel(accessibilityLabel)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
     }
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text)
-    }
+    private func padSlot(_ event: GestureEvent) -> some View {
+        VStack(spacing: 6) {
+            ZStack {
+                if event == .click {
+                    Circle()
+                        .fill(Color(nsColor: .controlBackgroundColor))
+                        .overlay {
+                            Circle()
+                                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                        }
+                        .frame(width: 36, height: 36)
+                }
+                Image(systemName: symbol(for: event))
+                    .font(.system(size: event == .click ? 13 : 15, weight: .semibold))
+                    .foregroundStyle(event == .click ? Color.primary : Color.secondary)
+            }
+            .frame(height: 36)
 
-    final class Coordinator: NSObject, NSTextFieldDelegate {
-        var text: Binding<String>
+            ShortcutRecorder(
+                shortcut: model.gestureShortcutBinding(for: event),
+                accessibilityLabel: "\(model.gestureMapButtonID) \(event.rawValue)"
+            )
+            .frame(width: 108, height: 22)
 
-        init(text: Binding<String>) {
-            self.text = text
+            IssueCaption(issue: model.gestureIssue(for: event))
         }
+        .frame(width: 116)
+    }
 
-        func controlTextDidChange(_ obj: Notification) {
-            guard let field = obj.object as? NSTextField else { return }
-            text.wrappedValue = field.stringValue
+    private func symbol(for event: GestureEvent) -> String {
+        switch event {
+        case .click: return "dot.circle"
+        case .up: return "arrow.up"
+        case .down: return "arrow.down"
+        case .left: return "arrow.left"
+        case .right: return "arrow.right"
         }
     }
 }

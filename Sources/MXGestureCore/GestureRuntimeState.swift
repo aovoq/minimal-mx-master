@@ -32,10 +32,10 @@ public struct GestureRuntimeState {
 
     public mutating func observe(_ signal: HIDGestureSignal, at now: TimeInterval) -> SignalEffect {
         switch signal {
-        case .buttonDown:
+        case .buttonDown(cid: _):
             lastRawXYSignalAt = nil
             return .beginHold
-        case .buttonUp:
+        case .buttonUp(cid: _):
             lastRawXYSignalAt = nil
             return .endHold
         case .rawXY:

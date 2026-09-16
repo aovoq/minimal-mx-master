@@ -16,6 +16,7 @@ final class GestureRuntimeController {
     private var holdReleaseTimer: Timer?
     private var state = GestureRuntimeState()
     private var captureServicesActive = false
+    private var activeGestureButtonID: String?
 
     init(
         config: AppConfig,
@@ -32,19 +33,20 @@ final class GestureRuntimeController {
     }
 
     func update(config: AppConfig) {
-        let gestureButtonsChanged = self.config.gestureButtonCIDs != config.gestureButtonCIDs
+        let policy = HIDDevicePolicy.from(config)
+        let hidConfigChanged = HIDDevicePolicy.from(self.config) != policy
         self.config = config
         executor.update(config: config)
         recognizer.update(settings: config.gesture)
-        hidManager.gestureButtonCIDs = config.gestureButtonCIDs
-        if gestureButtonsChanged, captureServicesActive {
+        hidManager.devicePolicy = policy
+        if hidConfigChanged, captureServicesActive {
             releaseHeldGesture()
             hidManager.restart()
         }
     }
 
     func startCaptureServices() {
-        hidManager.gestureButtonCIDs = config.gestureButtonCIDs
+        hidManager.devicePolicy = HIDDevicePolicy.from(config)
         hidManager.start()
         captureServicesActive = true
         _ = eventTap.start()
@@ -52,7 +54,7 @@ final class GestureRuntimeController {
 
     func restartCaptureServices() {
         releaseHeldGesture()
-        hidManager.gestureButtonCIDs = config.gestureButtonCIDs
+        hidManager.devicePolicy = HIDDevicePolicy.from(config)
         hidManager.restart()
         captureServicesActive = true
         _ = eventTap.start()
@@ -118,17 +120,38 @@ final class GestureRuntimeController {
     }
 
     private func handleGesture(_ event: GestureEvent) {
-        AppLog.gesture.info("Gesture event: \(event.rawValue, privacy: .public)")
-        executor.execute(event)
+        let buttonID = activeGestureButtonID ?? config.primaryGestureButtonID
+        AppLog.gesture.info("Gesture event: \(buttonID, privacy: .public) \(event.rawValue, privacy: .public)")
+        executor.execute(event, buttonID: buttonID)
         DispatchQueue.main.async { [weak self] in
             self?.onGestureEvent?(event)
         }
     }
 
     private func handleGestureSignal(_ signal: HIDGestureSignal) {
+        if case let .buttonDown(cid) = signal, let buttonID = buttonID(for: cid) {
+            if config.assignment(forButtonID: buttonID).action == .shortcut {
+                if let shortcut = config.clickShortcut(forButtonID: buttonID) {
+                    executor.execute(shortcut: shortcut)
+                }
+                DispatchQueue.main.async { [weak self] in
+                    self?.onGestureEvent?(.click)
+                }
+                return
+            }
+            activeGestureButtonID = buttonID
+        }
+
         let effect = state.observe(signal, at: currentTime())
         recognizer.handle(signal)
         apply(effect)
+    }
+
+    private func buttonID(for cid: UInt16) -> String? {
+        if cid == HIDGestureSignal.unknownCID {
+            return config.primaryGestureButtonID
+        }
+        return config.buttonID(forCID: cid)
     }
 
     private func apply(_ effect: GestureRuntimeState.SignalEffect) {
@@ -156,6 +179,7 @@ final class GestureRuntimeController {
     }
 
     private func releaseHeldGesture() {
+        activeGestureButtonID = nil
         recognizer.forceRelease()
         publishHolding(false)
         cancelHoldFailsafe()

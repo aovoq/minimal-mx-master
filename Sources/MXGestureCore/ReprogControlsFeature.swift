@@ -3,7 +3,8 @@ import Foundation
 final class ReprogControlsFeature {
     private let transport: HIDPPTransport
     private var configuration: ReprogConfiguration?
-    private var selectedPressed = false
+    private var previousPressed: Set<UInt16> = []
+    private var selectedHoldCID: UInt16?
 
     init(transport: HIDPPTransport) {
         self.transport = transport
@@ -13,23 +14,43 @@ final class ReprogControlsFeature {
         configuration?.rawXYEnabled ?? false
     }
 
-    func configureGesture(selectedCIDs: [UInt16] = []) -> ReprogConfiguration? {
+    func configureGesture(
+        selectedCIDs: [UInt16] = [],
+        gestureCIDs: [UInt16]? = nil,
+        autoSelectIfEmpty: Bool = true
+    ) -> ReprogConfiguration? {
         restoreDefaultReporting()
 
         for index in ReprogControls.candidateDeviceIndices {
-            guard let featureIndex = findFeature(deviceIndex: index) else { continue }
+            guard let featureIndex = transport.featureIndex(of: ReprogControls.featureID, deviceIndex: index) else {
+                continue
+            }
             AppLog.hid.info("Found REPROG_CONTROLS_V4 at index \(featureIndex) deviceIndex \(index)")
             let controls = readControls(deviceIndex: index, featureIndex: featureIndex)
-            let selected = ReprogControls.chooseGestureControls(from: controls, selectedCIDs: selectedCIDs)
-            guard !selected.isEmpty else { continue }
-            AppLog.hid.info(
-                "Selected gesture CIDs \(Self.cidList(selected), privacy: .public)"
+            let selection = ReprogControls.chooseControls(
+                from: controls,
+                selectedCIDs: selectedCIDs,
+                autoSelectIfEmpty: autoSelectIfEmpty
             )
+            for skipped in selection.skipped {
+                AppLog.hid.error(
+                    "Skipping CID 0x\(String(skipped.cid, radix: 16), privacy: .public): \(skipped.reason, privacy: .public)"
+                )
+            }
+            guard !selection.controls.isEmpty else { continue }
+            AppLog.hid.info(
+                "Selected gesture CIDs \(Self.cidList(selection.controls), privacy: .public)"
+            )
+
+            let resolvedGestureCIDs = Set(gestureCIDs ?? selection.controls.map(\.cid))
+            let shortcutCIDs = Set(selection.controls.map(\.cid)).subtracting(resolvedGestureCIDs)
 
             var configuredControls: [ReprogControl] = []
             var rawXYEnabled = false
-            for control in selected {
-                if shouldTryRawXY(control),
+            for control in selection.controls {
+                let asGesture = resolvedGestureCIDs.contains(control.cid)
+                if asGesture,
+                   shouldTryRawXY(control),
                    let configured = configureReporting(
                     control: control,
                     rawXY: true,
@@ -58,7 +79,10 @@ final class ReprogControlsFeature {
                 deviceIndex: index,
                 featureIndex: featureIndex,
                 controls: configuredControls,
-                rawXYEnabled: rawXYEnabled
+                rawXYEnabled: rawXYEnabled,
+                gestureCIDs: Set(configuredControls.map(\.cid)).intersection(resolvedGestureCIDs),
+                shortcutCIDs: shortcutCIDs,
+                skipped: selection.skipped
             )
             self.configuration = configuration
             return configuration
@@ -81,7 +105,8 @@ final class ReprogControlsFeature {
             )
         }
         self.configuration = nil
-        selectedPressed = false
+        previousPressed = []
+        selectedHoldCID = nil
     }
 
     func handleEvent(_ message: HIDPPMessage) -> HIDGestureSignal? {
@@ -92,12 +117,7 @@ final class ReprogControlsFeature {
         else { return nil }
 
         if message.function == 0 {
-            let pressed = !ReprogControls
-                .pressedCIDs(from: message.params)
-                .isDisjoint(with: configuration.selectedCIDs)
-            guard pressed != selectedPressed else { return nil }
-            selectedPressed = pressed
-            return pressed ? .buttonDown : .buttonUp
+            return handlePressedCIDs(ReprogControls.pressedCIDs(from: message.params), configuration: configuration)
         }
 
         if message.function == 1, let xy = ReprogControls.rawXY(from: message.params) {
@@ -107,16 +127,30 @@ final class ReprogControlsFeature {
         return nil
     }
 
-    private func findFeature(deviceIndex: UInt8) -> UInt8? {
-        let featureID = ReprogControls.featureID
-        let response = transport.request(
-            deviceIndex: deviceIndex,
-            featureIndex: ReprogControls.rootFeatureIndex,
-            function: 0,
-            params: [UInt8(featureID >> 8), UInt8(featureID & 0xFF), 0]
-        )
-        guard let index = response?.params.first, index != 0 else { return nil }
-        return index
+    private func handlePressedCIDs(
+        _ pressed: Set<UInt16>,
+        configuration: ReprogConfiguration
+    ) -> HIDGestureSignal? {
+        let divertedPressed = pressed.intersection(configuration.selectedCIDs)
+        let newlyPressed = divertedPressed.subtracting(previousPressed)
+        previousPressed = divertedPressed
+
+        if selectedHoldCID == nil, let cid = newlyPressed.first(where: { configuration.shortcutCIDs.contains($0) }) {
+            return .buttonDown(cid: cid)
+        }
+
+        let gesturePressed = divertedPressed.intersection(configuration.gestureCIDs)
+        if selectedHoldCID == nil, let cid = newlyPressed.first(where: { configuration.gestureCIDs.contains($0) }) {
+            selectedHoldCID = cid
+            return .buttonDown(cid: cid)
+        }
+
+        if let hold = selectedHoldCID, gesturePressed.isEmpty {
+            selectedHoldCID = nil
+            return .buttonUp(cid: hold)
+        }
+
+        return nil
     }
 
     private func readControls(deviceIndex: UInt8, featureIndex: UInt8) -> [ReprogControl] {

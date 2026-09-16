@@ -7,8 +7,8 @@ final class GestureRecognizerTests: XCTestCase {
         var events: [GestureEvent] = []
         recognizer.onEvent = { events.append($0) }
 
-        recognizer.handle(.buttonDown, now: 10)
-        recognizer.handle(.buttonUp, now: 10.1)
+        recognizer.handle(.buttonDown(cid: 0x00C3), now: 10)
+        recognizer.handle(.buttonUp(cid: 0x00C3), now: 10.1)
 
         XCTAssertEqual(events, [.click])
     }
@@ -18,11 +18,11 @@ final class GestureRecognizerTests: XCTestCase {
         var events: [GestureEvent] = []
         recognizer.onEvent = { events.append($0) }
 
-        recognizer.handle(.buttonDown, now: 10)
+        recognizer.handle(.buttonDown(cid: 0x00C3), now: 10)
         recognizer.handle(.rawXY(dx: 1, dy: 0), now: 10.01)
         recognizer.handle(.rawXY(dx: 60, dy: 5), now: 10.02)
         recognizer.handle(.rawXY(dx: 60, dy: 5), now: 10.03)
-        recognizer.handle(.buttonUp, now: 10.04)
+        recognizer.handle(.buttonUp(cid: 0x00C3), now: 10.04)
 
         XCTAssertEqual(events, [.right])
     }
@@ -32,15 +32,15 @@ final class GestureRecognizerTests: XCTestCase {
         var events: [GestureEvent] = []
         recognizer.onEvent = { events.append($0) }
 
-        recognizer.handle(.buttonDown, now: 10)
+        recognizer.handle(.buttonDown(cid: 0x00C3), now: 10)
         recognizer.handle(.rawXY(dx: 1, dy: 0), now: 10.01)
         recognizer.handle(.rawXY(dx: 60, dy: 0), now: 10.02)
-        recognizer.handle(.buttonUp, now: 10.03)
+        recognizer.handle(.buttonUp(cid: 0x00C3), now: 10.03)
 
-        recognizer.handle(.buttonDown, now: 10.04)
+        recognizer.handle(.buttonDown(cid: 0x00C3), now: 10.04)
         recognizer.handle(.rawXY(dx: -1, dy: 0), now: 10.05)
         recognizer.handle(.rawXY(dx: -60, dy: 0), now: 10.06)
-        recognizer.handle(.buttonUp, now: 10.07)
+        recognizer.handle(.buttonUp(cid: 0x00C3), now: 10.07)
 
         XCTAssertEqual(events, [.right, .left])
     }
@@ -50,14 +50,14 @@ final class GestureRecognizerTests: XCTestCase {
         var events: [GestureEvent] = []
         recognizer.onEvent = { events.append($0) }
 
-        recognizer.handle(.buttonDown, now: 10)
+        recognizer.handle(.buttonDown(cid: 0x00C3), now: 10)
         recognizer.handle(.rawXY(dx: 1, dy: 0), now: 10.01)
         recognizer.handle(.rawXY(dx: 60, dy: 0), now: 10.04)
-        recognizer.handle(.buttonUp, now: 10.05)
+        recognizer.handle(.buttonUp(cid: 0x00C3), now: 10.05)
 
-        recognizer.handle(.buttonDown, now: 10.06)
+        recognizer.handle(.buttonDown(cid: 0x00C3), now: 10.06)
         recognizer.handle(.rawXY(dx: -60, dy: 0), now: 10.10)
-        recognizer.handle(.buttonUp, now: 10.11)
+        recognizer.handle(.buttonUp(cid: 0x00C3), now: 10.11)
 
         XCTAssertEqual(events, [.right, .left])
     }
@@ -67,10 +67,10 @@ final class GestureRecognizerTests: XCTestCase {
         var events: [GestureEvent] = []
         recognizer.onEvent = { events.append($0) }
 
-        recognizer.handle(.buttonDown, now: 10)
+        recognizer.handle(.buttonDown(cid: 0x00C3), now: 10)
         recognizer.handle(.rawXY(dx: 1, dy: 1), now: 10.01)
         recognizer.handle(.rawXY(dx: 70, dy: 70), now: 10.02)
-        recognizer.handle(.buttonUp, now: 10.03)
+        recognizer.handle(.buttonUp(cid: 0x00C3), now: 10.03)
 
         XCTAssertEqual(events, [])
     }
@@ -80,10 +80,10 @@ final class GestureRecognizerTests: XCTestCase {
         var events: [GestureEvent] = []
         recognizer.onEvent = { events.append($0) }
 
-        recognizer.handle(.buttonDown, now: 10)
-        recognizer.handle(.buttonUp, now: 10.1)
-        recognizer.handle(.buttonDown, now: 10.2)
-        recognizer.handle(.buttonUp, now: 10.3)
+        recognizer.handle(.buttonDown(cid: 0x00C3), now: 10)
+        recognizer.handle(.buttonUp(cid: 0x00C3), now: 10.1)
+        recognizer.handle(.buttonDown(cid: 0x00C3), now: 10.2)
+        recognizer.handle(.buttonUp(cid: 0x00C3), now: 10.3)
 
         XCTAssertEqual(events, [.click])
     }

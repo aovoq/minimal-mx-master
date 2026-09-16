@@ -61,7 +61,7 @@ final class StatusMenuController: NSObject {
     }
 
     func setConfig(_ config: AppConfig) {
-        gestureButtonsItem.title = "Buttons: \(GestureButtonCatalog.summary(cids: config.gestureButtonCIDs))"
+        gestureButtonsItem.title = "Buttons: \(GestureButtonCatalog.summary(config: config))"
         mappingsItem.title = mappingSummary(config: config)
     }
 
@@ -108,11 +108,17 @@ final class StatusMenuController: NSObject {
     }
 
     private func mappingSummary(config: AppConfig) -> String {
-        GestureEvent.allCases
-            .compactMap { event in
-                config.shortcut(for: event).map { "\(event.rawValue): \($0.displayName)" }
-            }
-            .joined(separator: "  ")
+        let maps = config.gestureButtonIDs.compactMap { id -> String? in
+            let title = GestureButtonCatalog.option(id: id)?.title ?? id
+            let click = config.shortcut(for: .click, buttonID: id)?.displayName ?? "-"
+            return "\(title) click:\(click)"
+        }
+        let shortcuts = GestureButtonCatalog.options.compactMap { option -> String? in
+            guard let shortcut = config.clickShortcut(forButtonID: option.id) else { return nil }
+            return "\(option.title): \(shortcut.displayName)"
+        }
+        let parts = maps + shortcuts
+        return parts.isEmpty ? "Maps: Default" : parts.joined(separator: "  ")
     }
 
     @objc private func toggleEnabled() {

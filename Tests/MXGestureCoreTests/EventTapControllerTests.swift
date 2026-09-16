@@ -69,7 +69,7 @@ final class EventTapControllerTests: XCTestCase {
 
         XCTAssertNotNil(controller.handleForTesting(type: .otherMouseDown, event: down))
         XCTAssertNotNil(controller.handleForTesting(type: .otherMouseUp, event: up))
-        XCTAssertEqual(signals, [.buttonDown, .buttonUp])
+        XCTAssertEqual(signals, [.buttonDown(cid: HIDGestureSignal.unknownCID), .buttonUp(cid: HIDGestureSignal.unknownCID)])
     }
 
     func testDisabledPolicyAlwaysPassesMovement() {

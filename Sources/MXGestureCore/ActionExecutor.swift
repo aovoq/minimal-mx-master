@@ -22,15 +22,26 @@ public final class ActionExecutor {
         }
     }
 
-    public func execute(_ event: GestureEvent) {
+    public func execute(_ event: GestureEvent, buttonID: String? = nil) {
         queue.async { [weak self] in
-            self?.executeOnQueue(event)
+            self?.executeOnQueue(event, buttonID: buttonID)
         }
     }
 
-    private func executeOnQueue(_ event: GestureEvent) {
-        guard enabled, let shortcut = config.shortcut(for: event) else { return }
-        AppLog.gesture.info("Execute \(event.rawValue, privacy: .public) -> \(shortcut.displayName, privacy: .public)")
+    public func execute(shortcut: Shortcut) {
+        queue.async { [weak self] in
+            guard let self, self.enabled else { return }
+            AppLog.gesture.info("Execute shortcut \(shortcut.displayName, privacy: .public)")
+            self.post(shortcut)
+        }
+    }
+
+    private func executeOnQueue(_ event: GestureEvent, buttonID: String?) {
+        guard enabled, let shortcut = config.shortcut(for: event, buttonID: buttonID) else { return }
+        let button = buttonID ?? "gesture"
+        AppLog.gesture.info(
+            "Execute \(button, privacy: .public) \(event.rawValue, privacy: .public) -> \(shortcut.displayName, privacy: .public)"
+        )
         post(shortcut)
     }
 
