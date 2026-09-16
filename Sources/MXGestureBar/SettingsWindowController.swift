@@ -1,26 +1,40 @@
 import AppKit
+import SwiftUI
 import MXGestureCore
 
 final class SettingsWindowController: NSWindowController {
-    var onSave: ((AppConfig) -> Void)?
+    var onSave: ((AppConfig) -> Void)? {
+        didSet { model.onSave = onSave }
+    }
 
-    private var config: AppConfig
-    private var fields: [GestureEvent: NSTextField] = [:]
-    private var buttonChecks: [String: NSButton] = [:]
-    private let statusLabel = NSTextField(labelWithString: "")
+    private let model: SettingsModel
 
     init(config: AppConfig) {
-        self.config = config
+        let model = SettingsModel(config: config)
+        self.model = model
+
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 400),
-            styleMask: [.titled, .closable],
+            contentRect: NSRect(x: 0, y: 0, width: 680, height: 448),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
-        super.init(window: window)
-        window.title = "MXGestureBar Settings"
+        window.title = "Settings"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.minSize = NSSize(width: 600, height: 400)
         window.center()
-        buildContent(in: window)
+
+        super.init(window: window)
+
+        Self.applyPreviewAppearance(to: window)
+
+        let host = NSHostingView(rootView: SettingsView(model: model))
+        host.sizingOptions = []
+        window.contentView = host
     }
 
     required init?(coder: NSCoder) {
@@ -28,123 +42,126 @@ final class SettingsWindowController: NSWindowController {
     }
 
     func update(config: AppConfig) {
-        self.config = config
-        for event in GestureEvent.allCases {
-            fields[event]?.stringValue = config.shortcut(for: event)?.displayName ?? ""
-        }
-        refreshButtonChecks()
-        statusLabel.stringValue = ""
+        model.reload(config)
     }
 
-    private func buildContent(in window: NSWindow) {
-        let stack = NSStackView()
-        stack.orientation = .vertical
-        stack.spacing = 10
-        stack.edgeInsets = NSEdgeInsets(top: 18, left: 18, bottom: 18, right: 18)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        window.contentView?.addSubview(stack)
-
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: window.contentView!.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: window.contentView!.bottomAnchor)
-        ])
-
-        stack.addArrangedSubview(sectionLabel("Gesture buttons"))
-        stack.addArrangedSubview(buttonCheckRows())
-
-        for event in GestureEvent.allCases {
-            stack.addArrangedSubview(row(for: event))
-        }
-
-        statusLabel.textColor = .systemRed
-        stack.addArrangedSubview(statusLabel)
-
-        let save = NSButton(title: "Save", target: self, action: #selector(save))
-        save.bezelStyle = .rounded
-        stack.addArrangedSubview(save)
+    static func applyPreviewAppearance(to window: NSWindow) {
+        guard let name = previewAppearanceName() else { return }
+        window.appearance = NSAppearance(named: name)
     }
 
-    private func sectionLabel(_ title: String) -> NSTextField {
-        let label = NSTextField(labelWithString: title)
-        label.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
-        return label
-    }
+    private static func previewAppearanceName() -> NSAppearance.Name? {
+        let env = ProcessInfo.processInfo.environment["MXGESTUREBAR_APPEARANCE"]?.lowercased()
+        if env == "dark" { return .darkAqua }
+        if env == "light" { return .aqua }
 
-    private func buttonCheckRows() -> NSView {
-        let rows = NSStackView()
-        rows.orientation = .vertical
-        rows.spacing = 6
-        rows.alignment = .leading
+        if CommandLine.arguments.contains("--appearance=dark") { return .darkAqua }
+        if CommandLine.arguments.contains("--appearance=light") { return .aqua }
 
-        let options = GestureButtonCatalog.options
-        let chunks = stride(from: 0, to: options.count, by: 3).map {
-            Array(options[$0..<min($0 + 3, options.count)])
-        }
-        for chunk in chunks {
-            let row = NSStackView()
-            row.orientation = .horizontal
-            row.spacing = 16
-            row.alignment = .centerY
-            for option in chunk {
-                let checkbox = NSButton(checkboxWithTitle: option.title, target: nil, action: nil)
-                checkbox.setContentHuggingPriority(.defaultHigh, for: .horizontal)
-                buttonChecks[option.id] = checkbox
-                row.addArrangedSubview(checkbox)
+        if let index = CommandLine.arguments.firstIndex(of: "--appearance"),
+           CommandLine.arguments.indices.contains(index + 1) {
+            switch CommandLine.arguments[index + 1].lowercased() {
+            case "dark": return .darkAqua
+            case "light": return .aqua
+            default: break
             }
-            rows.addArrangedSubview(row)
         }
-        refreshButtonChecks()
-        return rows
+        return nil
     }
+}
 
-    private func refreshButtonChecks() {
-        for option in GestureButtonCatalog.options {
-            buttonChecks[option.id]?.state = GestureButtonCatalog.isSelected(
-                option,
-                cids: config.gestureButtonCIDs
-            ) ? .on : .off
+final class SettingsModel: ObservableObject {
+    enum Pane: String, CaseIterable, Identifiable {
+        case buttons
+        case shortcuts
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .buttons: return "Buttons"
+            case .shortcuts: return "Shortcuts"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .buttons: return "computermouse"
+            case .shortcuts: return "keyboard"
+            }
         }
     }
 
-    private func row(for event: GestureEvent) -> NSView {
-        let label = NSTextField(labelWithString: event.rawValue)
-        label.widthAnchor.constraint(equalToConstant: 60).isActive = true
+    @Published var pane: Pane = .buttons
+    @Published var shortcutTexts: [GestureEvent: String] = [:]
+    @Published var selectedButtonIDs: Set<String> = []
+    @Published var status: String = ""
+    @Published var statusIsError = false
 
-        let field = NSTextField(string: config.shortcut(for: event)?.displayName ?? "")
-        field.placeholderString = "ctrl+left"
-        fields[event] = field
+    var onSave: ((AppConfig) -> Void)?
 
-        let row = NSStackView(views: [label, field])
-        row.orientation = .horizontal
-        row.spacing = 10
-        return row
+    private var config: AppConfig
+
+    init(config: AppConfig) {
+        self.config = config
+        reload(config)
     }
 
-    @objc private func save() {
-        statusLabel.textColor = .systemRed
-        var next = config
-        let selectedIDs = Set(
-            buttonChecks.compactMap { id, button in
-                button.state == .on ? id : nil
+    func reload(_ config: AppConfig) {
+        self.config = config
+        shortcutTexts = Dictionary(
+            uniqueKeysWithValues: GestureEvent.allCases.map { event in
+                (event, config.shortcut(for: event)?.displayName ?? "")
             }
         )
-        next.gestureButtonCIDs = GestureButtonCatalog.cids(fromSelectedIDs: selectedIDs)
+        selectedButtonIDs = Set(
+            GestureButtonCatalog.options.compactMap { option in
+                GestureButtonCatalog.isSelected(option, cids: config.gestureButtonCIDs) ? option.id : nil
+            }
+        )
+        status = ""
+        statusIsError = false
+    }
+
+    func shortcutBinding(for event: GestureEvent) -> Binding<String> {
+        Binding(
+            get: { self.shortcutTexts[event] ?? "" },
+            set: { self.shortcutTexts[event] = $0 }
+        )
+    }
+
+    func buttonBinding(for option: GestureButtonCatalog.Option) -> Binding<Bool> {
+        Binding(
+            get: { self.selectedButtonIDs.contains(option.id) },
+            set: { enabled in
+                if enabled {
+                    self.selectedButtonIDs.insert(option.id)
+                } else {
+                    self.selectedButtonIDs.remove(option.id)
+                }
+            }
+        )
+    }
+
+    func save() {
+        var next = config
+        next.gestureButtonCIDs = GestureButtonCatalog.cids(fromSelectedIDs: selectedButtonIDs)
 
         for event in GestureEvent.allCases {
-            let shortcut = Shortcut(text: fields[event]?.stringValue ?? "")
+            let shortcut = Shortcut(text: shortcutTexts[event] ?? "")
             guard shortcut.isValid else {
-                statusLabel.stringValue = "Invalid shortcut for \(event.rawValue)"
+                statusIsError = true
+                status = "Invalid shortcut for \(event.rawValue)"
                 return
             }
             next.setShortcut(shortcut, for: event)
         }
+
         next.save()
         config = next
-        refreshButtonChecks()
-        statusLabel.textColor = .secondaryLabelColor
-        statusLabel.stringValue = "Saved"
+        reload(next)
+        statusIsError = false
+        status = "Saved"
         onSave?(next)
     }
 }
