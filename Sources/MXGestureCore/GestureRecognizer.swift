@@ -59,9 +59,9 @@ public final class GestureRecognizer {
 
     public func handle(_ signal: HIDGestureSignal, now: TimeInterval) {
         switch signal {
-        case .buttonDown:
+        case .buttonDown(cid: _):
             buttonDown(now: now)
-        case .buttonUp:
+        case .buttonUp(cid: _):
             buttonUp(now: now)
         case let .rawXY(dx, dy):
             move(dx: dx, dy: dy, now: now)

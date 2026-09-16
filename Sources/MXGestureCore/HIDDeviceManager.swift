@@ -10,11 +10,11 @@ public final class HIDDeviceManager {
     private var sessions: [Int: HIDDeviceSession] = [:]
     private var activeKey: Int?
     private var nextOpenAttemptAt = Date.distantPast
-    private var _gestureButtonCIDs: [UInt16] = []
+    private var _devicePolicy = HIDDevicePolicy()
 
-    public var gestureButtonCIDs: [UInt16] {
-        get { lock.withLock { _gestureButtonCIDs } }
-        set { lock.withLock { _gestureButtonCIDs = newValue } }
+    public var devicePolicy: HIDDevicePolicy {
+        get { lock.withLock { _devicePolicy } }
+        set { lock.withLock { _devicePolicy = newValue } }
     }
 
     public init() {}
@@ -144,12 +144,29 @@ public final class HIDDeviceManager {
     }
 
     private func configureGesture(for session: HIDDeviceSession, key: Int) {
-        let selectedCIDs = gestureButtonCIDs
+        let policy = devicePolicy
         DispatchQueue.global(qos: .utility).async { [weak self, weak session] in
             guard let self, let session else { return }
-            guard let configuration = session.client.configureGesture(selectedCIDs: selectedCIDs) else {
+            let wheelResult = session.client.configureWheels(policy.wheels)
+            if let reason = wheelResult.mainReason {
+                AppLog.hid.error("Main wheel: \(reason, privacy: .public)")
+            }
+            if let reason = wheelResult.thumbReason {
+                AppLog.hid.error("Thumb wheel: \(reason, privacy: .public)")
+            }
+
+            guard let configuration = session.client.configureGesture(
+                selectedCIDs: policy.divertCIDs,
+                gestureCIDs: policy.autoSelectIfEmpty ? nil : policy.gestureCIDs,
+                autoSelectIfEmpty: policy.autoSelectIfEmpty
+            ) else {
                 guard self.containsSession(session, key: key) else { return }
-                self.publishStatus(.noGestureCID(deviceName: session.name))
+                if policy.divertCIDs.isEmpty, !policy.autoSelectIfEmpty {
+                    self.lock.withLock { self.activeKey = key }
+                    self.publishStatus(.nativeButtons(deviceName: session.name))
+                } else {
+                    self.publishStatus(.noGestureCID(deviceName: session.name))
+                }
                 return
             }
 

@@ -14,7 +14,7 @@ final class SettingsWindowController: NSWindowController {
         self.model = model
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 680, height: 448),
+            contentRect: NSRect(x: 0, y: 0, width: 720, height: 520),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -25,7 +25,7 @@ final class SettingsWindowController: NSWindowController {
         window.isMovableByWindowBackground = true
         window.isOpaque = false
         window.backgroundColor = .clear
-        window.minSize = NSSize(width: 600, height: 400)
+        window.minSize = NSSize(width: 640, height: 440)
         window.center()
 
         super.init(window: window)
@@ -73,34 +73,47 @@ final class SettingsWindowController: NSWindowController {
 final class SettingsModel: ObservableObject {
     enum Pane: String, CaseIterable, Identifiable {
         case buttons
-        case shortcuts
+        case gestures
+        case wheels
 
         var id: String { rawValue }
 
         var title: String {
             switch self {
             case .buttons: return "Buttons"
-            case .shortcuts: return "Shortcuts"
+            case .gestures: return "Gestures"
+            case .wheels: return "Wheels"
             }
         }
 
         var symbol: String {
             switch self {
             case .buttons: return "computermouse"
-            case .shortcuts: return "keyboard"
+            case .gestures: return "hand.draw"
+            case .wheels: return "arrow.up.arrow.down"
             }
         }
     }
 
     @Published var pane: Pane = .buttons
-    @Published var shortcutTexts: [GestureEvent: String] = [:]
-    @Published var selectedButtonIDs: Set<String> = []
+    @Published var assignments: [String: ButtonAssignment] = [:]
+    @Published var gestureMapButtonID: String = "gesture"
+    @Published var gestureShortcutTexts: [String: [GestureEvent: String]] = [:]
+    @Published var clickShortcutTexts: [String: String] = [:]
+    @Published var invertMainWheel = false
+    @Published var invertThumbWheel = false
     @Published var status: String = ""
     @Published var statusIsError = false
 
     var onSave: ((AppConfig) -> Void)?
 
     private var config: AppConfig
+
+    var gestureMapButtonIDs: [String] {
+        GestureButtonCatalog.options
+            .filter { assignments[$0.id]?.action == .gesture }
+            .map(\.id)
+    }
 
     init(config: AppConfig) {
         self.config = config
@@ -109,53 +122,110 @@ final class SettingsModel: ObservableObject {
 
     func reload(_ config: AppConfig) {
         self.config = config
-        shortcutTexts = Dictionary(
-            uniqueKeysWithValues: GestureEvent.allCases.map { event in
-                (event, config.shortcut(for: event)?.displayName ?? "")
+        assignments = config.resolvedAssignments
+        clickShortcutTexts = Dictionary(
+            uniqueKeysWithValues: GestureButtonCatalog.options.map { option in
+                (option.id, config.assignment(forButtonID: option.id).shortcut.displayName)
             }
         )
-        selectedButtonIDs = Set(
-            GestureButtonCatalog.options.compactMap { option in
-                GestureButtonCatalog.isSelected(option, cids: config.gestureButtonCIDs) ? option.id : nil
+        gestureShortcutTexts = Dictionary(
+            uniqueKeysWithValues: GestureButtonCatalog.options.map { option in
+                let assigned = config.assignment(forButtonID: option.id)
+                let mappings = assigned.mappings.isEmpty ? AppConfig.defaultMappings : assigned.mappings
+                return (
+                    option.id,
+                    Dictionary(
+                        uniqueKeysWithValues: GestureEvent.allCases.map { event in
+                            (event, mappings[event.rawValue]?.displayName ?? "")
+                        }
+                    )
+                )
             }
         )
+        if let first = gestureMapButtonIDs.first {
+            gestureMapButtonID = first
+        }
+        invertMainWheel = config.wheels.invertMain
+        invertThumbWheel = config.wheels.invertThumb
         status = ""
         statusIsError = false
     }
 
-    func shortcutBinding(for event: GestureEvent) -> Binding<String> {
+    func actionBinding(for option: GestureButtonCatalog.Option) -> Binding<ButtonAction> {
         Binding(
-            get: { self.shortcutTexts[event] ?? "" },
-            set: { self.shortcutTexts[event] = $0 }
+            get: { self.assignments[option.id]?.action ?? .default },
+            set: { action in
+                var assigned = self.assignments[option.id] ?? ButtonAssignment()
+                assigned.action = action
+                if action == .gesture, assigned.mappings.isEmpty {
+                    assigned.mappings = AppConfig.defaultMappings
+                    self.ensureGestureShortcutTexts(for: option.id)
+                }
+                self.assignments[option.id] = assigned
+                if action == .gesture, !self.gestureMapButtonIDs.contains(self.gestureMapButtonID) {
+                    self.gestureMapButtonID = option.id
+                } else if action != .gesture, self.gestureMapButtonID == option.id {
+                    self.gestureMapButtonID = self.gestureMapButtonIDs.first ?? "gesture"
+                }
+            }
         )
     }
 
-    func buttonBinding(for option: GestureButtonCatalog.Option) -> Binding<Bool> {
+    func clickShortcutBinding(for option: GestureButtonCatalog.Option) -> Binding<String> {
         Binding(
-            get: { self.selectedButtonIDs.contains(option.id) },
-            set: { enabled in
-                if enabled {
-                    self.selectedButtonIDs.insert(option.id)
-                } else {
-                    self.selectedButtonIDs.remove(option.id)
-                }
+            get: { self.clickShortcutTexts[option.id] ?? "" },
+            set: { self.clickShortcutTexts[option.id] = $0 }
+        )
+    }
+
+    func gestureShortcutBinding(for event: GestureEvent) -> Binding<String> {
+        Binding(
+            get: { self.gestureShortcutTexts[self.gestureMapButtonID]?[event] ?? "" },
+            set: { value in
+                var texts = self.gestureShortcutTexts[self.gestureMapButtonID] ?? [:]
+                texts[event] = value
+                self.gestureShortcutTexts[self.gestureMapButtonID] = texts
             }
         )
     }
 
     func save() {
         var next = config
-        next.gestureButtonCIDs = GestureButtonCatalog.cids(fromSelectedIDs: selectedButtonIDs)
+        var nextAssignments = assignments
 
-        for event in GestureEvent.allCases {
-            let shortcut = Shortcut(text: shortcutTexts[event] ?? "")
-            guard shortcut.isValid else {
-                statusIsError = true
-                status = "Invalid shortcut for \(event.rawValue)"
-                return
+        for option in GestureButtonCatalog.options {
+            var assigned = nextAssignments[option.id] ?? ButtonAssignment()
+            switch assigned.action {
+            case .default:
+                break
+            case .shortcut:
+                let shortcut = Shortcut(text: clickShortcutTexts[option.id] ?? "")
+                guard shortcut.isValid else {
+                    statusIsError = true
+                    status = "Invalid shortcut for \(option.title)"
+                    return
+                }
+                assigned.shortcut = shortcut
+            case .gesture:
+                var mappings: [String: Shortcut] = [:]
+                for event in GestureEvent.allCases {
+                    let shortcut = Shortcut(text: gestureShortcutTexts[option.id]?[event] ?? "")
+                    guard shortcut.isValid else {
+                        statusIsError = true
+                        status = "Invalid \(event.rawValue) shortcut for \(option.title)"
+                        return
+                    }
+                    mappings[event.rawValue] = shortcut
+                }
+                assigned.mappings = mappings
             }
-            next.setShortcut(shortcut, for: event)
+            nextAssignments[option.id] = assigned
         }
+
+        next.buttonAssignments = nextAssignments
+        next.gestureButtonCIDs = next.gestureCIDs
+        next.mappings = nextAssignments[next.primaryGestureButtonID]?.mappings ?? AppConfig.defaultMappings
+        next.wheels = WheelSettings(invertMain: invertMainWheel, invertThumb: invertThumbWheel)
 
         next.save()
         config = next
@@ -163,5 +233,15 @@ final class SettingsModel: ObservableObject {
         statusIsError = false
         status = "Saved"
         onSave?(next)
+    }
+
+    private func ensureGestureShortcutTexts(for buttonID: String) {
+        if gestureShortcutTexts[buttonID] == nil || gestureShortcutTexts[buttonID]?.isEmpty == true {
+            gestureShortcutTexts[buttonID] = Dictionary(
+                uniqueKeysWithValues: GestureEvent.allCases.map { event in
+                    (event, AppConfig.defaultMappings[event.rawValue]?.displayName ?? "")
+                }
+            )
+        }
     }
 }

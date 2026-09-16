@@ -69,11 +69,13 @@ struct SettingsView: View {
                     switch model.pane {
                     case .buttons:
                         buttonsPane
-                    case .shortcuts:
-                        shortcutsPane
+                    case .gestures:
+                        gesturesPane
+                    case .wheels:
+                        wheelsPane
                     }
                 }
-                .frame(maxWidth: 540, alignment: .leading)
+                .frame(maxWidth: 560, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 22)
                 .padding(.top, 16)
@@ -86,8 +88,8 @@ struct SettingsView: View {
 
     private var buttonsPane: some View {
         paneLayout(
-            title: "Gesture buttons",
-            subtitle: "Buttons that start a gesture hold. Left and right click stay reserved."
+            title: "Buttons",
+            subtitle: "What each button does. Gesture starts a hold with that button’s own swipe map. Diverting replaces the native click; left and right stay native unless the mouse can divert them."
         ) {
             SettingsCard {
                 ForEach(Array(GestureButtonCatalog.options.enumerated()), id: \.element.id) { index, option in
@@ -95,35 +97,102 @@ struct SettingsView: View {
                         SettingsRowDivider()
                     }
                     SettingsRow(title: option.title, symbol: symbol(forButton: option.id)) {
-                        Toggle("", isOn: model.buttonBinding(for: option))
-                            .toggleStyle(.switch)
-                            .controlSize(.small)
-                            .labelsHidden()
-                            .accessibilityLabel(option.title)
+                        if model.assignments[option.id]?.action == .shortcut {
+                            ShortcutField(
+                                text: model.clickShortcutBinding(for: option),
+                                placeholder: "cmd+[",
+                                accessibilityLabel: "\(option.title) shortcut"
+                            )
+                            .frame(width: 120, height: 22)
+                        }
+                        Picker("", selection: model.actionBinding(for: option)) {
+                            ForEach(ButtonAction.allCases, id: \.self) { action in
+                                Text(action.title).tag(action)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 112)
+                        .accessibilityLabel(option.title)
                     }
                 }
             }
         }
     }
 
-    private var shortcutsPane: some View {
+    private var gesturesPane: some View {
         paneLayout(
-            title: "Shortcuts",
-            subtitle: "Fired on click and swipe. Use modifier+key, like ctrl+left."
+            title: "Gestures",
+            subtitle: "Click and swipe actions for each button set to Gesture. Back, Gesture, and Smart Shift can each have a different map."
+        ) {
+            if model.gestureMapButtonIDs.isEmpty {
+                SettingsCard {
+                    SettingsRow(title: "No gesture buttons", symbol: "hand.draw") {
+                        Text("Set a button to Gesture")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                SettingsCard {
+                    SettingsRow(title: "Button", symbol: "computermouse") {
+                        Picker("", selection: $model.gestureMapButtonID) {
+                            ForEach(model.gestureMapButtonIDs, id: \.self) { id in
+                                Text(GestureButtonCatalog.option(id: id)?.title ?? id).tag(id)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 140)
+                        .accessibilityLabel("Gesture button")
+                    }
+                }
+
+                SettingsCard {
+                    ForEach(Array(GestureEvent.allCases.enumerated()), id: \.element) { index, event in
+                        if index > 0 {
+                            SettingsRowDivider()
+                        }
+                        SettingsRow(title: event.rawValue.capitalized, symbol: symbol(forEvent: event)) {
+                            ShortcutField(
+                                text: model.gestureShortcutBinding(for: event),
+                                placeholder: "ctrl+left",
+                                accessibilityLabel: "\(model.gestureMapButtonID) \(event.rawValue)"
+                            )
+                            .frame(width: 176, height: 22)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var wheelsPane: some View {
+        paneLayout(
+            title: "Wheels",
+            subtitle: "Rotation direction for the main scroll wheel and the thumb wheel. Inverted uses the mouse HID++ invert flag when the device exposes it."
         ) {
             SettingsCard {
-                ForEach(Array(GestureEvent.allCases.enumerated()), id: \.element) { index, event in
-                    if index > 0 {
-                        SettingsRowDivider()
+                SettingsRow(title: "Main wheel", symbol: "arrow.up.arrow.down") {
+                    Picker("", selection: $model.invertMainWheel) {
+                        Text("Default").tag(false)
+                        Text("Inverted").tag(true)
                     }
-                    SettingsRow(title: event.rawValue.capitalized, symbol: symbol(forEvent: event)) {
-                        ShortcutField(
-                            text: model.shortcutBinding(for: event),
-                            placeholder: "ctrl+left",
-                            accessibilityLabel: event.rawValue
-                        )
-                        .frame(width: 176, height: 22)
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(width: 112)
+                    .accessibilityLabel("Main wheel direction")
+                }
+                SettingsRowDivider()
+                SettingsRow(title: "Thumb wheel", symbol: "arrow.left.arrow.right") {
+                    Picker("", selection: $model.invertThumbWheel) {
+                        Text("Default").tag(false)
+                        Text("Inverted").tag(true)
                     }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(width: 112)
+                    .accessibilityLabel("Thumb wheel direction")
                 }
             }
         }
@@ -178,7 +247,9 @@ struct SettingsView: View {
         case "gesture": return "hand.draw"
         case "back": return "chevron.left"
         case "forward": return "chevron.right"
+        case "left": return "computermouse"
         case "middle": return "circle"
+        case "right": return "computermouse.fill"
         case "smartShift": return "arrow.up.arrow.down"
         default: return "button.horizontal"
         }

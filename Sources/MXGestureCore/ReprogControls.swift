@@ -12,10 +12,16 @@ public struct ReprogControl: Equatable {
     public var isGestureCandidate: Bool {
         cid == 0x00C3 || cid == 0x00D7 || (isDivertable && (hasRawXY || isVirtual))
     }
+}
 
-    public var isReservedMouseButton: Bool {
-        ReprogControls.reservedCIDs.contains(cid)
-    }
+public struct SkippedControl: Equatable {
+    public var cid: UInt16
+    public var reason: String
+}
+
+public struct ControlSelection: Equatable {
+    public var controls: [ReprogControl]
+    public var skipped: [SkippedControl]
 }
 
 public struct ReprogConfiguration: Equatable {
@@ -23,6 +29,9 @@ public struct ReprogConfiguration: Equatable {
     public var featureIndex: UInt8
     public var controls: [ReprogControl]
     public var rawXYEnabled: Bool
+    public var gestureCIDs: Set<UInt16>
+    public var shortcutCIDs: Set<UInt16>
+    public var skipped: [SkippedControl]
 
     public var control: ReprogControl { controls[0] }
     public var selectedCIDs: Set<UInt16> { Set(controls.map(\.cid)) }
@@ -31,12 +40,18 @@ public struct ReprogConfiguration: Equatable {
         deviceIndex: UInt8,
         featureIndex: UInt8,
         controls: [ReprogControl],
-        rawXYEnabled: Bool
+        rawXYEnabled: Bool,
+        gestureCIDs: Set<UInt16>? = nil,
+        shortcutCIDs: Set<UInt16> = [],
+        skipped: [SkippedControl] = []
     ) {
         self.deviceIndex = deviceIndex
         self.featureIndex = featureIndex
         self.controls = controls
         self.rawXYEnabled = rawXYEnabled
+        self.gestureCIDs = gestureCIDs ?? Set(controls.map(\.cid))
+        self.shortcutCIDs = shortcutCIDs
+        self.skipped = skipped
     }
 
     public init(
@@ -63,9 +78,6 @@ public enum ReprogControls {
         0x00D7
     ]
 
-    /// Left and right click. Diverting these would steal the primary mouse buttons.
-    public static let reservedCIDs: Set<UInt16> = [0x0050, 0x0051]
-
     public static let rawXYReportingFlags: UInt8 = 0x33
     public static let divertOnlyReportingFlags: UInt8 = 0x03
     public static let clearReportingFlags: UInt8 = 0x22
@@ -84,22 +96,50 @@ public enum ReprogControls {
         from controls: [ReprogControl],
         selectedCIDs: [UInt16]
     ) -> [ReprogControl] {
+        chooseControls(from: controls, selectedCIDs: selectedCIDs).controls
+    }
+
+    public static func chooseControls(
+        from controls: [ReprogControl],
+        selectedCIDs: [UInt16],
+        autoSelectIfEmpty: Bool = true
+    ) -> ControlSelection {
         let divertable = Dictionary(
-            controls.filter { $0.isDivertable && !$0.isReservedMouseButton }.map { ($0.cid, $0) },
+            controls.filter(\.isDivertable).map { ($0.cid, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let present = Dictionary(
+            controls.map { ($0.cid, $0) },
             uniquingKeysWith: { first, _ in first }
         )
 
+        var skipped: [SkippedControl] = []
         if !selectedCIDs.isEmpty {
-            let matches = selectedCIDs.compactMap { divertable[$0] }
-            if !matches.isEmpty {
-                return matches
+            let matches = selectedCIDs.compactMap { cid -> ReprogControl? in
+                if let match = divertable[cid] {
+                    return match
+                }
+                if let control = present[cid], !control.isDivertable {
+                    skipped.append(SkippedControl(cid: cid, reason: "not divertable"))
+                } else {
+                    skipped.append(SkippedControl(cid: cid, reason: "not present"))
+                }
+                return nil
             }
+            if !matches.isEmpty {
+                return ControlSelection(controls: matches, skipped: skipped)
+            }
+            if !autoSelectIfEmpty {
+                return ControlSelection(controls: [], skipped: skipped)
+            }
+        } else if !autoSelectIfEmpty {
+            return ControlSelection(controls: [], skipped: skipped)
         }
 
         if let auto = chooseGestureControl(from: controls) {
-            return [auto]
+            return ControlSelection(controls: [auto], skipped: skipped)
         }
-        return []
+        return ControlSelection(controls: [], skipped: skipped)
     }
 
     public static func control(from params: [UInt8]) -> ReprogControl? {

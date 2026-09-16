@@ -11,6 +11,15 @@ final class GestureButtonCatalogTests: XCTestCase {
         XCTAssertEqual(GestureButtonCatalog.summary(cids: []), "Gesture")
     }
 
+    func testCatalogIncludesLeftAndRightInNamedOrder() {
+        XCTAssertEqual(
+            GestureButtonCatalog.options.map(\.id),
+            ["gesture", "back", "forward", "left", "middle", "right", "smartShift"]
+        )
+        XCTAssertEqual(GestureButtonCatalog.option(id: "left")?.cids, [0x0050])
+        XCTAssertEqual(GestureButtonCatalog.option(id: "right")?.cids, [0x0051])
+    }
+
     func testSelectedIDsExpandToKnownCIDs() {
         XCTAssertEqual(
             GestureButtonCatalog.cids(fromSelectedIDs: ["gesture", "back"]),
@@ -22,6 +31,19 @@ final class GestureButtonCatalogTests: XCTestCase {
         XCTAssertEqual(
             GestureButtonCatalog.summary(cids: [0x00C3, 0x0053, 0x0056]),
             "Gesture, Back, Forward"
+        )
+    }
+
+    func testSummaryListsAssignedActions() {
+        var config = AppConfig()
+        config.buttonAssignments = [
+            "gesture": .gesture(),
+            "back": ButtonAssignment(action: .shortcut, shortcut: Shortcut(keys: ["cmd", "["]))
+        ]
+
+        XCTAssertEqual(
+            GestureButtonCatalog.summary(config: config),
+            "Gesture: Gesture, Back: Shortcut"
         )
     }
 }

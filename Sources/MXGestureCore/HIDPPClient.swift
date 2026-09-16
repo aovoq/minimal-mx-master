@@ -6,18 +6,33 @@ public final class HIDPPClient {
 
     private let broker: HIDPPRequestBroker
     private let reprogControls: ReprogControlsFeature
+    private let wheelFeatures: WheelFeatures
 
     public init(device: IOHIDDevice) {
         self.broker = HIDPPRequestBroker(device: device)
         self.reprogControls = ReprogControlsFeature(transport: broker)
+        self.wheelFeatures = WheelFeatures(transport: broker)
     }
 
     public var rawXYEnabled: Bool {
         reprogControls.rawXYEnabled
     }
 
-    public func configureGesture(selectedCIDs: [UInt16] = []) -> ReprogConfiguration? {
-        reprogControls.configureGesture(selectedCIDs: selectedCIDs)
+    public func configureGesture(
+        selectedCIDs: [UInt16] = [],
+        gestureCIDs: [UInt16]? = nil,
+        autoSelectIfEmpty: Bool = true
+    ) -> ReprogConfiguration? {
+        reprogControls.configureGesture(
+            selectedCIDs: selectedCIDs,
+            gestureCIDs: gestureCIDs,
+            autoSelectIfEmpty: autoSelectIfEmpty
+        )
+    }
+
+    @discardableResult
+    public func configureWheels(_ settings: WheelSettings) -> WheelApplyResult {
+        wheelFeatures.apply(settings)
     }
 
     public func restoreDefaultReporting() {

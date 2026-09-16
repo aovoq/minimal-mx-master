@@ -72,4 +72,15 @@ final class GestureInputPolicyTests: XCTestCase {
         XCTAssertTrue(policy.usesMovementFallback)
         XCTAssertTrue(policy.blocksMovement)
     }
+
+    func testNativeButtonsStayPassive() {
+        let policy = GestureInputPolicy(
+            isEnabled: true,
+            hidStatus: .nativeButtons(deviceName: "MX Master"),
+            isHolding: false
+        )
+
+        XCTAssertEqual(policy.mode, .disabled)
+        XCTAssertFalse(policy.usesButtonFallback)
+    }
 }

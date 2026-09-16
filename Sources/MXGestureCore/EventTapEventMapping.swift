@@ -12,9 +12,9 @@ extension CGEventType {
     var hidButtonSignal: HIDGestureSignal? {
         switch self {
         case .otherMouseDown:
-            return .buttonDown
+            return .buttonDown(cid: HIDGestureSignal.unknownCID)
         case .otherMouseUp:
-            return .buttonUp
+            return .buttonUp(cid: HIDGestureSignal.unknownCID)
         default:
             return nil
         }

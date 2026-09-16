@@ -31,10 +31,10 @@ final class GestureRuntimeStateTests: XCTestCase {
         XCTAssertEqual(state.observe(.rawXY(dx: 1, dy: 1), at: 20), .none)
         XCTAssertFalse(state.rawXYFallbackActive(isHolding: true, now: 20.01))
 
-        XCTAssertEqual(state.observe(.buttonDown, at: 20.02), .beginHold)
+        XCTAssertEqual(state.observe(.buttonDown(cid: 0x00C3), at: 20.02), .beginHold)
         XCTAssertTrue(state.rawXYFallbackActive(isHolding: true, now: 20.03))
 
-        XCTAssertEqual(state.observe(.buttonUp, at: 20.04), .endHold)
+        XCTAssertEqual(state.observe(.buttonUp(cid: 0x00C3), at: 20.04), .endHold)
         XCTAssertTrue(state.rawXYFallbackActive(isHolding: true, now: 20.05))
     }
 

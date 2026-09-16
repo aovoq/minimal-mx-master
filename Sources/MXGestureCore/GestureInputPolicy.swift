@@ -36,14 +36,13 @@ public struct GestureInputPolicy: Equatable {
             } else {
                 mode = .hidButtonOnly
             }
-        } else if hidStatus.connected {
+        } else if hidStatus.eventTapFallback {
             // Device is present but we couldn't program it (unknown firmware,
             // permission glitch, etc.). Fallback can still be useful.
             mode = .eventTapFallback
         } else {
-            // No supported device present. Stay completely passive — don't
-            // touch input. This prevents stealing buttons from other devices
-            // and the cascade of failures that follows.
+            // No supported device, or the user left every button on Default.
+            // Stay completely passive — don't touch input.
             mode = .disabled
         }
     }

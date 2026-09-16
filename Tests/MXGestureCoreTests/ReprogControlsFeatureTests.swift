@@ -68,7 +68,7 @@ final class ReprogControlsFeatureTests: XCTestCase {
 
         XCTAssertEqual(
             feature.handleEvent(.init(deviceIndex: 0xFF, featureIndex: 0x05, function: 0, params: [0x00, 0x53])),
-            .buttonDown
+            .buttonDown(cid: 0x0053)
         )
         XCTAssertNil(
             feature.handleEvent(.init(
@@ -83,7 +83,7 @@ final class ReprogControlsFeatureTests: XCTestCase {
         )
         XCTAssertEqual(
             feature.handleEvent(.init(deviceIndex: 0xFF, featureIndex: 0x05, function: 0, params: [0x00, 0x00])),
-            .buttonUp
+            .buttonUp(cid: 0x0053)
         )
     }
 
@@ -94,14 +94,14 @@ final class ReprogControlsFeatureTests: XCTestCase {
 
         XCTAssertEqual(
             feature.handleEvent(.init(deviceIndex: 0xFF, featureIndex: 0x05, function: 0, params: [0x00, 0xC3])),
-            .buttonDown
+            .buttonDown(cid: 0x00C3)
         )
         XCTAssertNil(
             feature.handleEvent(.init(deviceIndex: 0xFF, featureIndex: 0x05, function: 0, params: [0x00, 0xC3]))
         )
         XCTAssertEqual(
             feature.handleEvent(.init(deviceIndex: 0xFF, featureIndex: 0x05, function: 0, params: [0x00, 0x00])),
-            .buttonUp
+            .buttonUp(cid: 0x00C3)
         )
         XCTAssertEqual(
             feature.handleEvent(.init(deviceIndex: 0xFF, featureIndex: 0x05, function: 1, params: [0xFF, 0xFE, 0x00, 0x05])),
@@ -128,6 +128,73 @@ final class ReprogControlsFeatureTests: XCTestCase {
             feature.handleEvent(.init(deviceIndex: 0xFF, featureIndex: 0x05, function: 0, params: [0x00, 0x53]))
         )
     }
+
+    func testConfigureGestureDivertsLeftWhenDivertable() {
+        let transport = FakeHIDPPTransport(controls: [.left, .gesture])
+        let feature = ReprogControlsFeature(transport: transport)
+
+        let configuration = feature.configureGesture(
+            selectedCIDs: [0x0050, 0x00C3],
+            autoSelectIfEmpty: false
+        )
+
+        XCTAssertEqual(configuration?.controls.map(\.cid), [0x0050, 0x00C3])
+        XCTAssertEqual(configuration?.skipped, [])
+    }
+
+    func testConfigureGestureRecordsNonDivertableLeftInsteadOfSilentSkip() {
+        let transport = FakeHIDPPTransport(controls: [.leftFixed, .back])
+        let feature = ReprogControlsFeature(transport: transport)
+
+        let configuration = feature.configureGesture(
+            selectedCIDs: [0x0050, 0x0053],
+            autoSelectIfEmpty: false
+        )
+
+        XCTAssertEqual(configuration?.controls.map(\.cid), [0x0053])
+        XCTAssertEqual(configuration?.skipped, [SkippedControl(cid: 0x0050, reason: "not divertable")])
+    }
+
+    func testHandleEventKeepsHoldCIDFromTheButtonThatStartedIt() {
+        let transport = FakeHIDPPTransport(controls: [.gesture, .back])
+        let feature = ReprogControlsFeature(transport: transport)
+        _ = feature.configureGesture(
+            selectedCIDs: [0x00C3, 0x0053],
+            gestureCIDs: [0x00C3, 0x0053],
+            autoSelectIfEmpty: false
+        )
+
+        XCTAssertEqual(
+            feature.handleEvent(.init(deviceIndex: 0xFF, featureIndex: 0x05, function: 0, params: [0x00, 0x53])),
+            .buttonDown(cid: 0x0053)
+        )
+        XCTAssertEqual(
+            feature.handleEvent(.init(deviceIndex: 0xFF, featureIndex: 0x05, function: 0, params: [0x00, 0x00])),
+            .buttonUp(cid: 0x0053)
+        )
+        XCTAssertEqual(
+            feature.handleEvent(.init(deviceIndex: 0xFF, featureIndex: 0x05, function: 0, params: [0x00, 0xC3])),
+            .buttonDown(cid: 0x00C3)
+        )
+    }
+
+    func testShortcutButtonsEmitPressWithoutHold() {
+        let transport = FakeHIDPPTransport(controls: [.back])
+        let feature = ReprogControlsFeature(transport: transport)
+        _ = feature.configureGesture(
+            selectedCIDs: [0x0053],
+            gestureCIDs: [],
+            autoSelectIfEmpty: false
+        )
+
+        XCTAssertEqual(
+            feature.handleEvent(.init(deviceIndex: 0xFF, featureIndex: 0x05, function: 0, params: [0x00, 0x53])),
+            .buttonDown(cid: 0x0053)
+        )
+        XCTAssertNil(
+            feature.handleEvent(.init(deviceIndex: 0xFF, featureIndex: 0x05, function: 0, params: [0x00, 0x00]))
+        )
+    }
 }
 
 private struct FakeReprogControl {
@@ -138,6 +205,12 @@ private struct FakeReprogControl {
     )
     static let back = FakeReprogControl(
         control: ReprogControl(cid: 0x0053, taskID: 0, flags: 0x20, additionalFlags: 0)
+    )
+    static let left = FakeReprogControl(
+        control: ReprogControl(cid: 0x0050, taskID: 0, flags: 0x20, additionalFlags: 0)
+    )
+    static let leftFixed = FakeReprogControl(
+        control: ReprogControl(cid: 0x0050, taskID: 0, flags: 0x00, additionalFlags: 0)
     )
 }
 

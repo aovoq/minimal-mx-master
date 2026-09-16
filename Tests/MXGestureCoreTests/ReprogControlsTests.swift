@@ -36,7 +36,7 @@ final class ReprogControlsTests: XCTestCase {
         )
     }
 
-    func testChooseGestureControlsIgnoresReservedPrimaryButtons() {
+    func testChooseGestureControlsIncludesDivertablePrimaryButtons() {
         let left = ReprogControl(cid: 0x0050, taskID: 0, flags: 0x20, additionalFlags: 0)
         let back = ReprogControl(cid: 0x0053, taskID: 0, flags: 0x20, additionalFlags: 0)
         let gesture = ReprogControl(cid: 0x00C3, taskID: 0, flags: 0x20, additionalFlags: 0x01)
@@ -46,7 +46,34 @@ final class ReprogControlsTests: XCTestCase {
                 from: [left, back, gesture],
                 selectedCIDs: [0x0050, 0x0053]
             ).map(\.cid),
-            [0x0053]
+            [0x0050, 0x0053]
+        )
+    }
+
+    func testChooseControlsSkipsNonDivertableButtonsWithReason() {
+        let left = ReprogControl(cid: 0x0050, taskID: 0, flags: 0x00, additionalFlags: 0)
+        let back = ReprogControl(cid: 0x0053, taskID: 0, flags: 0x20, additionalFlags: 0)
+
+        let selection = ReprogControls.chooseControls(
+            from: [left, back],
+            selectedCIDs: [0x0050, 0x0053],
+            autoSelectIfEmpty: false
+        )
+
+        XCTAssertEqual(selection.controls.map(\.cid), [0x0053])
+        XCTAssertEqual(selection.skipped, [SkippedControl(cid: 0x0050, reason: "not divertable")])
+    }
+
+    func testChooseControlsDoesNotAutoSelectWhenEmptyAndAutoSelectDisabled() {
+        let gesture = ReprogControl(cid: 0x00C3, taskID: 0, flags: 0x20, additionalFlags: 0x01)
+
+        XCTAssertEqual(
+            ReprogControls.chooseControls(
+                from: [gesture],
+                selectedCIDs: [],
+                autoSelectIfEmpty: false
+            ).controls,
+            []
         )
     }
 

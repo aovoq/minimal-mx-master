@@ -51,4 +51,34 @@ final class HIDDeviceStatusTests: XCTestCase {
             "MX Master CID 0xc3, 0x53"
         )
     }
+
+    func testConfiguredStatusAppendsSkippedControls() {
+        let configuration = ReprogConfiguration(
+            deviceIndex: 0xFF,
+            featureIndex: 0x05,
+            controls: [
+                ReprogControl(cid: 0x0053, taskID: 0, flags: 0x20, additionalFlags: 0)
+            ],
+            rawXYEnabled: false,
+            skipped: [SkippedControl(cid: 0x0050, reason: "not divertable")]
+        )
+
+        XCTAssertEqual(
+            HIDDeviceStatus.configured(deviceName: "MX Master", configuration: configuration).name,
+            "MX Master CID 0x53; skipped 0x50 not divertable"
+        )
+    }
+
+    func testNativeButtonsStatusDoesNotRequestEventTapFallback() {
+        XCTAssertEqual(
+            HIDDeviceStatus.nativeButtons(deviceName: "MX Master"),
+            .init(
+                connected: true,
+                name: "MX Master",
+                rawXYEnabled: false,
+                gestureConfigured: false,
+                eventTapFallback: false
+            )
+        )
+    }
 }
