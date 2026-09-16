@@ -59,8 +59,12 @@ public struct AppConfig: Codable, Equatable {
     public func shortcut(for event: GestureEvent, buttonID: String? = nil) -> Shortcut? {
         if let buttonID {
             let assigned = assignment(forButtonID: buttonID)
-            if assigned.action == .gesture {
-                return assigned.mappings[event.rawValue] ?? mappings[event.rawValue]
+            guard assigned.action == .gesture else { return nil }
+            if let mapped = assigned.mappings[event.rawValue] {
+                return mapped
+            }
+            if assigned.mappings.isEmpty {
+                return mappings[event.rawValue]
             }
             return nil
         }

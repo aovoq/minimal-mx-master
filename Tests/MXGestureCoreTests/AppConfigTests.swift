@@ -71,6 +71,26 @@ final class AppConfigTests: XCTestCase {
         XCTAssertEqual(decoded.shortcutCIDs, [0x00C4])
     }
 
+    func testGestureButtonDoesNotInheritMissingEventsFromGlobalMap() {
+        var config = AppConfig()
+        config.buttonAssignments = [
+            "gesture": .gesture(mappings: AppConfig.defaultMappings),
+            "back": .gesture(mappings: [
+                GestureEvent.click.rawValue: Shortcut(keys: ["cmd", "["])
+            ]),
+            "smartShift": .gesture(mappings: [
+                GestureEvent.up.rawValue: Shortcut(keys: ["cmd", "shift", "tab"]),
+                GestureEvent.down.rawValue: Shortcut(keys: ["ctrl", "down"])
+            ])
+        ]
+
+        XCTAssertEqual(config.shortcut(for: .click, buttonID: "back"), Shortcut(keys: ["cmd", "["]))
+        XCTAssertNil(config.shortcut(for: .up, buttonID: "back"))
+        XCTAssertEqual(config.shortcut(for: .up, buttonID: "smartShift"), Shortcut(keys: ["cmd", "shift", "tab"]))
+        XCTAssertNil(config.shortcut(for: .click, buttonID: "smartShift"))
+        XCTAssertEqual(config.shortcut(for: .click, buttonID: "gesture"), Shortcut(keys: ["ctrl", "up"]))
+    }
+
     func testAllDefaultButtonsDoNotDivert() {
         var config = AppConfig()
         config.buttonAssignments = Dictionary(

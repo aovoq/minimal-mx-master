@@ -142,7 +142,10 @@ final class SettingsModel: ObservableObject {
                 )
             }
         )
-        if let first = gestureMapButtonIDs.first {
+        let previousMapButtonID = gestureMapButtonID
+        if gestureMapButtonIDs.contains(previousMapButtonID) {
+            gestureMapButtonID = previousMapButtonID
+        } else if let first = gestureMapButtonIDs.first {
             gestureMapButtonID = first
         }
         invertMainWheel = config.wheels.invertMain
