@@ -17,6 +17,7 @@ final class StatusMenuController: NSObject {
     private let accessibilityItem = NSMenuItem()
     private let inputMonitoringItem = NSMenuItem()
     private let mappingsItem = NSMenuItem()
+    private let gestureButtonsItem = NSMenuItem()
 
     private var enabled: Bool
 
@@ -60,6 +61,7 @@ final class StatusMenuController: NSObject {
     }
 
     func setConfig(_ config: AppConfig) {
+        gestureButtonsItem.title = "Buttons: \(GestureButtonCatalog.summary(cids: config.gestureButtonCIDs))"
         mappingsItem.title = mappingSummary(config: config)
     }
 
@@ -77,8 +79,10 @@ final class StatusMenuController: NSObject {
         menu.addItem(lastItem)
         menu.addItem(.separator())
 
+        gestureButtonsItem.isEnabled = false
         mappingsItem.isEnabled = false
-        mappingsItem.title = mappingSummary(config: config)
+        setConfig(config)
+        menu.addItem(gestureButtonsItem)
         menu.addItem(mappingsItem)
 
         let settings = NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ",")

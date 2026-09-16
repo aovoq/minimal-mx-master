@@ -37,9 +37,12 @@ public struct HIDDeviceStatus: Equatable {
     }
 
     public static func configured(deviceName: String, configuration: ReprogConfiguration) -> HIDDeviceStatus {
-        HIDDeviceStatus(
+        let cids = configuration.controls
+            .map { "0x\(String($0.cid, radix: 16))" }
+            .joined(separator: ", ")
+        return HIDDeviceStatus(
             connected: true,
-            name: "\(deviceName) CID 0x\(String(configuration.control.cid, radix: 16))",
+            name: "\(deviceName) CID \(cids)",
             rawXYEnabled: configuration.rawXYEnabled,
             gestureConfigured: true
         )

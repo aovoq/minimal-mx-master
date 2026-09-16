@@ -34,4 +34,21 @@ final class HIDDeviceStatusTests: XCTestCase {
             )
         )
     }
+
+    func testConfiguredStatusListsEveryDivertedCID() {
+        let configuration = ReprogConfiguration(
+            deviceIndex: 0xFF,
+            featureIndex: 0x05,
+            controls: [
+                ReprogControl(cid: 0x00C3, taskID: 0, flags: 0x20, additionalFlags: 0x01),
+                ReprogControl(cid: 0x0053, taskID: 0, flags: 0x20, additionalFlags: 0)
+            ],
+            rawXYEnabled: true
+        )
+
+        XCTAssertEqual(
+            HIDDeviceStatus.configured(deviceName: "MX Master", configuration: configuration).name,
+            "MX Master CID 0xc3, 0x53"
+        )
+    }
 }

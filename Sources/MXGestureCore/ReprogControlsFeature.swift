@@ -13,35 +13,55 @@ final class ReprogControlsFeature {
         configuration?.rawXYEnabled ?? false
     }
 
-    func configureGesture() -> ReprogConfiguration? {
+    func configureGesture(selectedCIDs: [UInt16] = []) -> ReprogConfiguration? {
+        restoreDefaultReporting()
+
         for index in ReprogControls.candidateDeviceIndices {
             guard let featureIndex = findFeature(deviceIndex: index) else { continue }
             AppLog.hid.info("Found REPROG_CONTROLS_V4 at index \(featureIndex) deviceIndex \(index)")
             let controls = readControls(deviceIndex: index, featureIndex: featureIndex)
-            guard let control = ReprogControls.chooseGestureControl(from: controls) else { continue }
-            AppLog.hid.info("Selected gesture CID 0x\(String(control.cid, radix: 16), privacy: .public)")
+            let selected = ReprogControls.chooseGestureControls(from: controls, selectedCIDs: selectedCIDs)
+            guard !selected.isEmpty else { continue }
+            AppLog.hid.info(
+                "Selected gesture CIDs \(Self.cidList(selected), privacy: .public)"
+            )
 
-            if let configuration = configureReporting(
-                control: control,
-                rawXY: true,
-                deviceIndex: index,
-                featureIndex: featureIndex
-            ) {
-                AppLog.hid.info("Enabled RawXY divert for CID 0x\(String(control.cid, radix: 16), privacy: .public)")
-                self.configuration = configuration
-                return configuration
+            var configuredControls: [ReprogControl] = []
+            var rawXYEnabled = false
+            for control in selected {
+                if shouldTryRawXY(control),
+                   let configured = configureReporting(
+                    control: control,
+                    rawXY: true,
+                    deviceIndex: index,
+                    featureIndex: featureIndex
+                   ) {
+                    AppLog.hid.info("Enabled RawXY divert for CID 0x\(String(control.cid, radix: 16), privacy: .public)")
+                    configuredControls.append(configured.control)
+                    rawXYEnabled = true
+                    continue
+                }
+
+                if let configured = configureReporting(
+                    control: control,
+                    rawXY: false,
+                    deviceIndex: index,
+                    featureIndex: featureIndex
+                ) {
+                    AppLog.hid.info("Enabled divert without RawXY for CID 0x\(String(control.cid, radix: 16), privacy: .public)")
+                    configuredControls.append(configured.control)
+                }
             }
 
-            if let configuration = configureReporting(
-                control: control,
-                rawXY: false,
+            guard !configuredControls.isEmpty else { continue }
+            let configuration = ReprogConfiguration(
                 deviceIndex: index,
-                featureIndex: featureIndex
-            ) {
-                AppLog.hid.info("Enabled divert without RawXY for CID 0x\(String(control.cid, radix: 16), privacy: .public)")
-                self.configuration = configuration
-                return configuration
-            }
+                featureIndex: featureIndex,
+                controls: configuredControls,
+                rawXYEnabled: rawXYEnabled
+            )
+            self.configuration = configuration
+            return configuration
         }
 
         return nil
@@ -49,15 +69,17 @@ final class ReprogControlsFeature {
 
     func restoreDefaultReporting() {
         guard let configuration else { return }
-        _ = transport.send(
-            deviceIndex: configuration.deviceIndex,
-            featureIndex: configuration.featureIndex,
-            function: 3,
-            params: ReprogControls.reportingParams(
-                cid: configuration.control.cid,
-                flags: ReprogControls.clearReportingFlags
+        for control in configuration.controls {
+            _ = transport.send(
+                deviceIndex: configuration.deviceIndex,
+                featureIndex: configuration.featureIndex,
+                function: 3,
+                params: ReprogControls.reportingParams(
+                    cid: control.cid,
+                    flags: ReprogControls.clearReportingFlags
+                )
             )
-        )
+        }
         self.configuration = nil
         selectedPressed = false
     }
@@ -70,9 +92,9 @@ final class ReprogControlsFeature {
         else { return nil }
 
         if message.function == 0 {
-            let pressed = ReprogControls
+            let pressed = !ReprogControls
                 .pressedCIDs(from: message.params)
-                .contains(configuration.control.cid)
+                .isDisjoint(with: configuration.selectedCIDs)
             guard pressed != selectedPressed else { return nil }
             selectedPressed = pressed
             return pressed ? .buttonDown : .buttonUp
@@ -155,5 +177,13 @@ final class ReprogControlsFeature {
             function: 3,
             params: ReprogControls.reportingParams(cid: cid, flags: flags)
         ) != nil
+    }
+
+    private func shouldTryRawXY(_ control: ReprogControl) -> Bool {
+        control.hasRawXY || ReprogControls.preferredGestureCIDs.contains(control.cid)
+    }
+
+    private static func cidList(_ controls: [ReprogControl]) -> String {
+        controls.map { "0x\(String($0.cid, radix: 16))" }.joined(separator: ", ")
     }
 }
