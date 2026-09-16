@@ -14,7 +14,7 @@ final class SettingsWindowController: NSWindowController {
         self.model = model
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 720, height: 500),
+            contentRect: NSRect(x: 0, y: 0, width: 680, height: 448),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -25,7 +25,7 @@ final class SettingsWindowController: NSWindowController {
         window.isMovableByWindowBackground = true
         window.isOpaque = false
         window.backgroundColor = .clear
-        window.minSize = NSSize(width: 620, height: 420)
+        window.minSize = NSSize(width: 600, height: 400)
         window.center()
 
         super.init(window: window)
@@ -46,14 +46,27 @@ final class SettingsWindowController: NSWindowController {
     }
 
     static func applyPreviewAppearance(to window: NSWindow) {
-        switch ProcessInfo.processInfo.environment["MXGESTUREBAR_APPEARANCE"]?.lowercased() {
-        case "dark":
-            window.appearance = NSAppearance(named: .darkAqua)
-        case "light":
-            window.appearance = NSAppearance(named: .aqua)
-        default:
-            break
+        guard let name = previewAppearanceName() else { return }
+        window.appearance = NSAppearance(named: name)
+    }
+
+    private static func previewAppearanceName() -> NSAppearance.Name? {
+        let env = ProcessInfo.processInfo.environment["MXGESTUREBAR_APPEARANCE"]?.lowercased()
+        if env == "dark" { return .darkAqua }
+        if env == "light" { return .aqua }
+
+        if CommandLine.arguments.contains("--appearance=dark") { return .darkAqua }
+        if CommandLine.arguments.contains("--appearance=light") { return .aqua }
+
+        if let index = CommandLine.arguments.firstIndex(of: "--appearance"),
+           CommandLine.arguments.indices.contains(index + 1) {
+            switch CommandLine.arguments[index + 1].lowercased() {
+            case "dark": return .darkAqua
+            case "light": return .aqua
+            default: break
+            }
         }
+        return nil
     }
 }
 

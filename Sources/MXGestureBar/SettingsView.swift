@@ -8,22 +8,21 @@ struct SettingsView: View {
     var body: some View {
         HStack(spacing: 0) {
             sidebar
-                .frame(width: 176)
+                .frame(width: 168)
                 .frame(maxHeight: .infinity, alignment: .top)
                 .background {
                     VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
                         .ignoresSafeArea()
                 }
 
-            Rectangle()
-                .fill(Color.primary.opacity(0.08))
+            Color(nsColor: .separatorColor)
                 .frame(width: 1)
                 .ignoresSafeArea()
 
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background {
-                    VisualEffectView(material: .contentBackground, blendingMode: .behindWindow)
+                    VisualEffectView(material: .underWindowBackground, blendingMode: .behindWindow)
                         .ignoresSafeArea()
                 }
         }
@@ -32,19 +31,12 @@ struct SettingsView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("Settings")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.bottom, 8)
-
             ForEach(SettingsModel.Pane.allCases) { pane in
                 sidebarItem(pane)
             }
-
             Spacer(minLength: 0)
         }
-        .padding(.top, 8)
+        .padding(.top, 30)
         .padding(.horizontal, 10)
         .padding(.bottom, 12)
     }
@@ -59,12 +51,12 @@ struct SettingsView: View {
                 .font(.system(size: 13, weight: selected ? .medium : .regular))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 8)
-                .padding(.vertical, 6)
+                .padding(.vertical, 5)
                 .background {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(selected ? Color.primary.opacity(0.08) : Color.clear)
                 }
-                .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .buttonStyle(.plain)
         .foregroundStyle(selected ? Color.primary : Color.secondary)
@@ -81,10 +73,10 @@ struct SettingsView: View {
                         shortcutsPane
                     }
                 }
-                .frame(maxWidth: 560, alignment: .leading)
+                .frame(maxWidth: 540, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 24)
-                .padding(.top, 20)
+                .padding(.horizontal, 22)
+                .padding(.top, 16)
                 .padding(.bottom, 16)
             }
 
@@ -125,22 +117,12 @@ struct SettingsView: View {
                         SettingsRowDivider()
                     }
                     SettingsRow(title: event.rawValue.capitalized, symbol: symbol(forEvent: event)) {
-                        TextField("ctrl+left", text: model.shortcutBinding(for: event))
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 12.5, design: .monospaced))
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 168)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                            .background {
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .fill(Color(nsColor: .textBackgroundColor))
-                            }
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
-                            }
-                            .accessibilityLabel(event.rawValue)
+                        ShortcutField(
+                            text: model.shortcutBinding(for: event),
+                            placeholder: "ctrl+left",
+                            accessibilityLabel: event.rawValue
+                        )
+                        .frame(width: 176, height: 22)
                     }
                 }
             }
@@ -152,11 +134,11 @@ struct SettingsView: View {
         subtitle: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.system(size: 20, weight: .semibold))
-                    .tracking(-0.3)
+                    .tracking(-0.28)
                 Text(subtitle)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
@@ -168,8 +150,7 @@ struct SettingsView: View {
 
     private var footer: some View {
         VStack(spacing: 0) {
-            Rectangle()
-                .fill(Color.primary.opacity(0.08))
+            Color(nsColor: .separatorColor)
                 .frame(height: 1)
 
             HStack(spacing: 12) {
@@ -183,15 +164,12 @@ struct SettingsView: View {
                 Button("Save") {
                     model.save()
                 }
-                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
+                .keyboardShortcut(.defaultAction)
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 18)
             .padding(.vertical, 10)
-        }
-        .background {
-            VisualEffectView(material: .headerView, blendingMode: .withinWindow)
-                .ignoresSafeArea(edges: .bottom)
         }
     }
 
@@ -228,7 +206,7 @@ private struct SettingsCard<Content: View>: View {
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                    .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
             }
     }
 }
@@ -254,8 +232,7 @@ private struct SettingsRow<Trailing: View>: View {
             trailing()
         }
         .padding(.horizontal, 12)
-        .frame(minHeight: 36)
-        .accessibilityElement(children: .combine)
+        .frame(minHeight: 34)
     }
 }
 
@@ -263,7 +240,53 @@ private struct SettingsRowDivider: View {
     var body: some View {
         Divider()
             .padding(.leading, 38)
-            .opacity(0.7)
+            .opacity(0.65)
+    }
+}
+
+private struct ShortcutField: NSViewRepresentable {
+    @Binding var text: String
+    var placeholder: String
+    var accessibilityLabel: String
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = NSTextField(string: text)
+        field.placeholderString = placeholder
+        field.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        field.bezelStyle = .roundedBezel
+        field.controlSize = .small
+        field.focusRingType = .default
+        field.delegate = context.coordinator
+        field.setAccessibilityLabel(accessibilityLabel)
+        field.lineBreakMode = .byTruncatingTail
+        field.cell?.usesSingleLineMode = true
+        field.cell?.sendsActionOnEndEditing = true
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        if field.currentEditor() == nil, field.stringValue != text {
+            field.stringValue = text
+        }
+        field.placeholderString = placeholder
+        field.setAccessibilityLabel(accessibilityLabel)
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var text: Binding<String>
+
+        init(text: Binding<String>) {
+            self.text = text
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            guard let field = obj.object as? NSTextField else { return }
+            text.wrappedValue = field.stringValue
+        }
     }
 }
 

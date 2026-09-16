@@ -13,13 +13,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         wireCallbacks()
         showInitialMenuState()
+        if CommandLine.arguments.contains("--settings") {
+            openSettings()
+            return
+        }
         requestMissingPermissions()
         refreshPermission()
         installWakeObserver()
         installPermissionTimer()
-        if CommandLine.arguments.contains("--settings") {
-            openSettings()
-        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
