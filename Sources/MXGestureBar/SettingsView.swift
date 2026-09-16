@@ -15,10 +15,6 @@ struct SettingsView: View {
                         .ignoresSafeArea()
                 }
 
-            Color(nsColor: .separatorColor)
-                .frame(width: 1)
-                .ignoresSafeArea()
-
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background {
@@ -47,7 +43,7 @@ struct SettingsView: View {
             model.pane = pane
         } label: {
             Label(pane.title, systemImage: pane.symbol)
-                .labelStyle(.titleAndIcon)
+                .labelStyle(SidebarLabelStyle())
                 .font(.system(size: 13, weight: selected ? .medium : .regular))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 8)
@@ -245,6 +241,18 @@ struct SettingsView: View {
         case "right": return "computermouse.fill"
         case "smartShift": return "arrow.up.arrow.down"
         default: return "button.horizontal"
+        }
+    }
+}
+
+private struct SidebarLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 8) {
+            configuration.icon
+                .imageScale(.medium)
+                .frame(width: 18, alignment: .center)
+            configuration.title
+            Spacer(minLength: 0)
         }
     }
 }
