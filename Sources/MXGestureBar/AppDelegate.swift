@@ -17,6 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshPermission()
         installWakeObserver()
         installPermissionTimer()
+        if CommandLine.arguments.contains("--settings") {
+            openSettings()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
