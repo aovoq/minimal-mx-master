@@ -9,8 +9,27 @@ set -euo pipefail
 #
 # Usage:
 #   script/release.sh 1.0.0
+#   script/release.sh 1.0.0 --install
 
-VERSION="${1:?usage: release.sh <version> (e.g. 1.0.0)}"
+usage() {
+  echo "usage: release.sh <version> [--install] (e.g. 1.0.0)" >&2
+  exit 1
+}
+
+INSTALL=0
+VERSION=""
+for arg in "$@"; do
+  case "$arg" in
+    --install) INSTALL=1 ;;
+    -*) usage ;;
+    *)
+      [[ -z "$VERSION" ]] || usage
+      VERSION="$arg"
+      ;;
+  esac
+done
+[[ -n "$VERSION" ]] || usage
+
 APP_NAME="MXGestureBar"
 BUNDLE_ID="dev.aovoq.MXGestureBar"
 TEAM_ID="XDZ7L87T5C"
@@ -101,11 +120,37 @@ xcrun notarytool submit "$DMG_PATH" \
   --wait
 xcrun stapler staple "$DMG_PATH"
 
+if [[ "$INSTALL" -eq 1 ]]; then
+  echo "==> Quit running $APP_NAME"
+  pkill -x "$APP_NAME" >/dev/null 2>&1 || true
+  for _ in {1..50}; do
+    pgrep -x "$APP_NAME" >/dev/null || break
+    sleep 0.1
+  done
+  if pgrep -x "$APP_NAME" >/dev/null; then
+    pkill -KILL -x "$APP_NAME" >/dev/null 2>&1 || true
+    sleep 0.2
+  fi
+  if pgrep -x "$APP_NAME" >/dev/null; then
+    echo "error: $APP_NAME is still running" >&2
+    exit 1
+  fi
+
+  INSTALL_APP="/Applications/$APP_NAME.app"
+  echo "==> Install to $INSTALL_APP"
+  rm -rf "$INSTALL_APP"
+  /usr/bin/ditto "$APP_BUNDLE" "$INSTALL_APP"
+  /usr/bin/open "$INSTALL_APP"
+fi
+
 echo
 echo "Done."
 echo "  App: $APP_BUNDLE"
 echo "  Zip: $ZIP_PATH"
 echo "  Dmg: $DMG_PATH"
+if [[ "$INSTALL" -eq 1 ]]; then
+  echo "  Installed: /Applications/$APP_NAME.app"
+fi
 echo
 echo "Sanity check:"
 echo "  spctl --assess -vv --type execute \"$APP_BUNDLE\""
