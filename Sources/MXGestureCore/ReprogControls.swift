@@ -12,13 +12,46 @@ public struct ReprogControl: Equatable {
     public var isGestureCandidate: Bool {
         cid == 0x00C3 || cid == 0x00D7 || (isDivertable && (hasRawXY || isVirtual))
     }
+
+    public var isReservedMouseButton: Bool {
+        ReprogControls.reservedCIDs.contains(cid)
+    }
 }
 
 public struct ReprogConfiguration: Equatable {
     public var deviceIndex: UInt8
     public var featureIndex: UInt8
-    public var control: ReprogControl
+    public var controls: [ReprogControl]
     public var rawXYEnabled: Bool
+
+    public var control: ReprogControl { controls[0] }
+    public var selectedCIDs: Set<UInt16> { Set(controls.map(\.cid)) }
+
+    public init(
+        deviceIndex: UInt8,
+        featureIndex: UInt8,
+        controls: [ReprogControl],
+        rawXYEnabled: Bool
+    ) {
+        self.deviceIndex = deviceIndex
+        self.featureIndex = featureIndex
+        self.controls = controls
+        self.rawXYEnabled = rawXYEnabled
+    }
+
+    public init(
+        deviceIndex: UInt8,
+        featureIndex: UInt8,
+        control: ReprogControl,
+        rawXYEnabled: Bool
+    ) {
+        self.init(
+            deviceIndex: deviceIndex,
+            featureIndex: featureIndex,
+            controls: [control],
+            rawXYEnabled: rawXYEnabled
+        )
+    }
 }
 
 public enum ReprogControls {
@@ -29,6 +62,9 @@ public enum ReprogControls {
         0x00C3,
         0x00D7
     ]
+
+    /// Left and right click. Diverting these would steal the primary mouse buttons.
+    public static let reservedCIDs: Set<UInt16> = [0x0050, 0x0051]
 
     public static let rawXYReportingFlags: UInt8 = 0x33
     public static let divertOnlyReportingFlags: UInt8 = 0x03
@@ -42,6 +78,28 @@ public enum ReprogControls {
             }
         }
         return controls.first(where: { $0.isGestureCandidate })
+    }
+
+    public static func chooseGestureControls(
+        from controls: [ReprogControl],
+        selectedCIDs: [UInt16]
+    ) -> [ReprogControl] {
+        let divertable = Dictionary(
+            controls.filter { $0.isDivertable && !$0.isReservedMouseButton }.map { ($0.cid, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        if !selectedCIDs.isEmpty {
+            let matches = selectedCIDs.compactMap { divertable[$0] }
+            if !matches.isEmpty {
+                return matches
+            }
+        }
+
+        if let auto = chooseGestureControl(from: controls) {
+            return [auto]
+        }
+        return []
     }
 
     public static func control(from params: [UInt8]) -> ReprogControl? {

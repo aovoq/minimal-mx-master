@@ -10,6 +10,12 @@ public final class HIDDeviceManager {
     private var sessions: [Int: HIDDeviceSession] = [:]
     private var activeKey: Int?
     private var nextOpenAttemptAt = Date.distantPast
+    private var _gestureButtonCIDs: [UInt16] = []
+
+    public var gestureButtonCIDs: [UInt16] {
+        get { lock.withLock { _gestureButtonCIDs } }
+        set { lock.withLock { _gestureButtonCIDs = newValue } }
+    }
 
     public init() {}
 
@@ -138,9 +144,10 @@ public final class HIDDeviceManager {
     }
 
     private func configureGesture(for session: HIDDeviceSession, key: Int) {
+        let selectedCIDs = gestureButtonCIDs
         DispatchQueue.global(qos: .utility).async { [weak self, weak session] in
             guard let self, let session else { return }
-            guard let configuration = session.client.configureGesture() else {
+            guard let configuration = session.client.configureGesture(selectedCIDs: selectedCIDs) else {
                 guard self.containsSession(session, key: key) else { return }
                 self.publishStatus(.noGestureCID(deviceName: session.name))
                 return

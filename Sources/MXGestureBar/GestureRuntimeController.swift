@@ -32,12 +32,19 @@ final class GestureRuntimeController {
     }
 
     func update(config: AppConfig) {
+        let gestureButtonsChanged = self.config.gestureButtonCIDs != config.gestureButtonCIDs
         self.config = config
         executor.update(config: config)
         recognizer.update(settings: config.gesture)
+        hidManager.gestureButtonCIDs = config.gestureButtonCIDs
+        if gestureButtonsChanged, captureServicesActive {
+            releaseHeldGesture()
+            hidManager.restart()
+        }
     }
 
     func startCaptureServices() {
+        hidManager.gestureButtonCIDs = config.gestureButtonCIDs
         hidManager.start()
         captureServicesActive = true
         _ = eventTap.start()
@@ -45,6 +52,7 @@ final class GestureRuntimeController {
 
     func restartCaptureServices() {
         releaseHeldGesture()
+        hidManager.gestureButtonCIDs = config.gestureButtonCIDs
         hidManager.restart()
         captureServicesActive = true
         _ = eventTap.start()

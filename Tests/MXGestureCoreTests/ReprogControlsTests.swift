@@ -22,6 +22,57 @@ final class ReprogControlsTests: XCTestCase {
         XCTAssertEqual(ReprogControls.chooseGestureControl(from: [generic, preferred])?.cid, 0x00C3)
     }
 
+    func testChooseGestureControlsUsesExplicitButtonsEvenWithoutRawXY() {
+        let gesture = ReprogControl(cid: 0x00C3, taskID: 0, flags: 0x20, additionalFlags: 0x01)
+        let back = ReprogControl(cid: 0x0053, taskID: 0, flags: 0x20, additionalFlags: 0)
+        let forward = ReprogControl(cid: 0x0056, taskID: 0, flags: 0x20, additionalFlags: 0)
+
+        XCTAssertEqual(
+            ReprogControls.chooseGestureControls(
+                from: [gesture, back, forward],
+                selectedCIDs: [0x0053, 0x00C3]
+            ).map(\.cid),
+            [0x0053, 0x00C3]
+        )
+    }
+
+    func testChooseGestureControlsIgnoresReservedPrimaryButtons() {
+        let left = ReprogControl(cid: 0x0050, taskID: 0, flags: 0x20, additionalFlags: 0)
+        let back = ReprogControl(cid: 0x0053, taskID: 0, flags: 0x20, additionalFlags: 0)
+        let gesture = ReprogControl(cid: 0x00C3, taskID: 0, flags: 0x20, additionalFlags: 0x01)
+
+        XCTAssertEqual(
+            ReprogControls.chooseGestureControls(
+                from: [left, back, gesture],
+                selectedCIDs: [0x0050, 0x0053]
+            ).map(\.cid),
+            [0x0053]
+        )
+    }
+
+    func testChooseGestureControlsFallsBackToDedicatedButtonWhenSelectionIsMissing() {
+        let gesture = ReprogControl(cid: 0x00C3, taskID: 0, flags: 0x20, additionalFlags: 0x01)
+        let back = ReprogControl(cid: 0x0053, taskID: 0, flags: 0x20, additionalFlags: 0)
+
+        XCTAssertEqual(
+            ReprogControls.chooseGestureControls(
+                from: [gesture, back],
+                selectedCIDs: [0x00D7]
+            ).map(\.cid),
+            [0x00C3]
+        )
+    }
+
+    func testChooseGestureControlsAutoSelectsDedicatedButtonWhenUnconfigured() {
+        let back = ReprogControl(cid: 0x0053, taskID: 0, flags: 0x20, additionalFlags: 0)
+        let gesture = ReprogControl(cid: 0x00C3, taskID: 0, flags: 0x20, additionalFlags: 0x01)
+
+        XCTAssertEqual(
+            ReprogControls.chooseGestureControls(from: [back, gesture], selectedCIDs: []).map(\.cid),
+            [0x00C3]
+        )
+    }
+
     func testControlParsingUsesHIDPPControlShape() {
         let control = ReprogControls.control(from: [0x00, 0xC3, 0x12, 0x34, 0x20, 0, 0, 0, 0x01])
 

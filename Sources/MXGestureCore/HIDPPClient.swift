@@ -16,8 +16,8 @@ public final class HIDPPClient {
         reprogControls.rawXYEnabled
     }
 
-    public func configureGesture() -> ReprogConfiguration? {
-        reprogControls.configureGesture()
+    public func configureGesture(selectedCIDs: [UInt16] = []) -> ReprogConfiguration? {
+        reprogControls.configureGesture(selectedCIDs: selectedCIDs)
     }
 
     public func restoreDefaultReporting() {
