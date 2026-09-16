@@ -14,7 +14,7 @@ final class SettingsWindowController: NSWindowController {
         self.model = model
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 720, height: 520),
+            contentRect: NSRect(x: 0, y: 0, width: 720, height: 580),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -25,7 +25,7 @@ final class SettingsWindowController: NSWindowController {
         window.isMovableByWindowBackground = true
         window.isOpaque = false
         window.backgroundColor = .clear
-        window.minSize = NSSize(width: 640, height: 440)
+        window.minSize = NSSize(width: 640, height: 500)
         window.center()
 
         super.init(window: window)
@@ -98,8 +98,8 @@ final class SettingsModel: ObservableObject {
     @Published var pane: Pane = .buttons
     @Published var assignments: [String: ButtonAssignment] = [:]
     @Published var gestureMapButtonID: String = "gesture"
-    @Published var gestureShortcutTexts: [String: [GestureEvent: String]] = [:]
-    @Published var clickShortcutTexts: [String: String] = [:]
+    @Published var gestureShortcuts: [String: [GestureEvent: Shortcut]] = [:]
+    @Published var clickShortcuts: [String: Shortcut] = [:]
     @Published var invertMainWheel = false
     @Published var invertThumbWheel = false
     @Published var status: String = ""
@@ -115,6 +115,12 @@ final class SettingsModel: ObservableObject {
             .map(\.id)
     }
 
+    var canSave: Bool {
+        activeShortcutSlots.allSatisfy { slot, shortcut in
+            ShortcutFieldIssue.evaluate(shortcut, others: others(excluding: slot)) == nil
+        }
+    }
+
     init(config: AppConfig) {
         self.config = config
         reload(config)
@@ -123,12 +129,12 @@ final class SettingsModel: ObservableObject {
     func reload(_ config: AppConfig) {
         self.config = config
         assignments = config.resolvedAssignments
-        clickShortcutTexts = Dictionary(
+        clickShortcuts = Dictionary(
             uniqueKeysWithValues: GestureButtonCatalog.options.map { option in
-                (option.id, config.assignment(forButtonID: option.id).shortcut.displayName)
+                (option.id, config.assignment(forButtonID: option.id).shortcut)
             }
         )
-        gestureShortcutTexts = Dictionary(
+        gestureShortcuts = Dictionary(
             uniqueKeysWithValues: GestureButtonCatalog.options.map { option in
                 let assigned = config.assignment(forButtonID: option.id)
                 let mappings = assigned.mappings.isEmpty ? AppConfig.defaultMappings : assigned.mappings
@@ -136,7 +142,7 @@ final class SettingsModel: ObservableObject {
                     option.id,
                     Dictionary(
                         uniqueKeysWithValues: GestureEvent.allCases.map { event in
-                            (event, mappings[event.rawValue]?.displayName ?? "")
+                            (event, mappings[event.rawValue] ?? Shortcut(keys: []))
                         }
                     )
                 )
@@ -174,25 +180,48 @@ final class SettingsModel: ObservableObject {
         )
     }
 
-    func clickShortcutBinding(for option: GestureButtonCatalog.Option) -> Binding<String> {
+    func clickShortcutBinding(for option: GestureButtonCatalog.Option) -> Binding<Shortcut> {
         Binding(
-            get: { self.clickShortcutTexts[option.id] ?? "" },
-            set: { self.clickShortcutTexts[option.id] = $0 }
+            get: { self.clickShortcuts[option.id] ?? Shortcut(keys: []) },
+            set: { self.clickShortcuts[option.id] = $0 }
         )
     }
 
-    func gestureShortcutBinding(for event: GestureEvent) -> Binding<String> {
+    func gestureShortcutBinding(for event: GestureEvent) -> Binding<Shortcut> {
         Binding(
-            get: { self.gestureShortcutTexts[self.gestureMapButtonID]?[event] ?? "" },
+            get: { self.gestureShortcuts[self.gestureMapButtonID]?[event] ?? Shortcut(keys: []) },
             set: { value in
-                var texts = self.gestureShortcutTexts[self.gestureMapButtonID] ?? [:]
-                texts[event] = value
-                self.gestureShortcutTexts[self.gestureMapButtonID] = texts
+                var map = self.gestureShortcuts[self.gestureMapButtonID] ?? [:]
+                map[event] = value
+                self.gestureShortcuts[self.gestureMapButtonID] = map
             }
         )
     }
 
+    func clickIssue(for option: GestureButtonCatalog.Option) -> ShortcutFieldIssue? {
+        guard assignments[option.id]?.action == .shortcut else { return nil }
+        let slot = ShortcutSlot.click(option.id)
+        return ShortcutFieldIssue.evaluate(
+            clickShortcuts[option.id] ?? Shortcut(keys: []),
+            others: others(excluding: slot)
+        )
+    }
+
+    func gestureIssue(for event: GestureEvent) -> ShortcutFieldIssue? {
+        let slot = ShortcutSlot.gesture(button: gestureMapButtonID, event: event)
+        return ShortcutFieldIssue.evaluate(
+            gestureShortcuts[gestureMapButtonID]?[event] ?? Shortcut(keys: []),
+            others: others(excluding: slot)
+        )
+    }
+
     func save() {
+        guard canSave else {
+            statusIsError = true
+            status = "Fix the highlighted shortcuts"
+            return
+        }
+
         var next = config
         var nextAssignments = assignments
 
@@ -202,23 +231,11 @@ final class SettingsModel: ObservableObject {
             case .default:
                 break
             case .shortcut:
-                let shortcut = Shortcut(text: clickShortcutTexts[option.id] ?? "")
-                guard shortcut.isValid else {
-                    statusIsError = true
-                    status = "Invalid shortcut for \(option.title)"
-                    return
-                }
-                assigned.shortcut = shortcut
+                assigned.shortcut = clickShortcuts[option.id] ?? Shortcut(keys: [])
             case .gesture:
                 var mappings: [String: Shortcut] = [:]
                 for event in GestureEvent.allCases {
-                    let shortcut = Shortcut(text: gestureShortcutTexts[option.id]?[event] ?? "")
-                    guard shortcut.isValid else {
-                        statusIsError = true
-                        status = "Invalid \(event.rawValue) shortcut for \(option.title)"
-                        return
-                    }
-                    mappings[event.rawValue] = shortcut
+                    mappings[event.rawValue] = gestureShortcuts[option.id]?[event] ?? Shortcut(keys: [])
                 }
                 assigned.mappings = mappings
             }
@@ -239,12 +256,36 @@ final class SettingsModel: ObservableObject {
     }
 
     private func ensureGestureShortcutTexts(for buttonID: String) {
-        if gestureShortcutTexts[buttonID] == nil || gestureShortcutTexts[buttonID]?.isEmpty == true {
-            gestureShortcutTexts[buttonID] = Dictionary(
+        if gestureShortcuts[buttonID] == nil || gestureShortcuts[buttonID]?.isEmpty == true {
+            gestureShortcuts[buttonID] = Dictionary(
                 uniqueKeysWithValues: GestureEvent.allCases.map { event in
-                    (event, AppConfig.defaultMappings[event.rawValue]?.displayName ?? "")
+                    (event, AppConfig.defaultMappings[event.rawValue] ?? Shortcut(keys: []))
                 }
             )
         }
+    }
+
+    private enum ShortcutSlot: Equatable {
+        case click(String)
+        case gesture(button: String, event: GestureEvent)
+    }
+
+    private var activeShortcutSlots: [(ShortcutSlot, Shortcut)] {
+        GestureButtonCatalog.options.flatMap { option -> [(ShortcutSlot, Shortcut)] in
+            switch assignments[option.id]?.action {
+            case .shortcut:
+                return [(.click(option.id), clickShortcuts[option.id] ?? Shortcut(keys: []))]
+            case .gesture:
+                return GestureEvent.allCases.map { event in
+                    (.gesture(button: option.id, event: event), gestureShortcuts[option.id]?[event] ?? Shortcut(keys: []))
+                }
+            default:
+                return []
+            }
+        }
+    }
+
+    private func others(excluding slot: ShortcutSlot) -> [Shortcut] {
+        activeShortcutSlots.compactMap { $0.0 == slot ? nil : $0.1 }
     }
 }

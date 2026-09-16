@@ -97,23 +97,27 @@ struct SettingsView: View {
                         SettingsRowDivider()
                     }
                     SettingsRow(title: option.title, symbol: symbol(forButton: option.id)) {
-                        if model.assignments[option.id]?.action == .shortcut {
-                            ShortcutField(
-                                text: model.clickShortcutBinding(for: option),
-                                placeholder: "cmd+[",
-                                accessibilityLabel: "\(option.title) shortcut"
-                            )
-                            .frame(width: 120, height: 22)
-                        }
-                        Picker("", selection: model.actionBinding(for: option)) {
-                            ForEach(ButtonAction.allCases, id: \.self) { action in
-                                Text(action.title).tag(action)
+                        HStack(alignment: .center, spacing: 8) {
+                            if model.assignments[option.id]?.action == .shortcut {
+                                VStack(alignment: .trailing, spacing: 2) {
+                                    ShortcutRecorder(
+                                        shortcut: model.clickShortcutBinding(for: option),
+                                        accessibilityLabel: "\(option.title) shortcut"
+                                    )
+                                    .frame(width: 108, height: 22)
+                                    IssueCaption(issue: model.clickIssue(for: option))
+                                }
                             }
+                            Picker("", selection: model.actionBinding(for: option)) {
+                                ForEach(ButtonAction.allCases, id: \.self) { action in
+                                    Text(action.title).tag(action)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
+                            .frame(width: 112)
+                            .accessibilityLabel(option.title)
                         }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .frame(width: 112)
-                        .accessibilityLabel(option.title)
                     }
                 }
             }
@@ -123,7 +127,7 @@ struct SettingsView: View {
     private var gesturesPane: some View {
         paneLayout(
             title: "Gestures",
-            subtitle: "Click and swipe actions for each button set to Gesture. Back, Gesture, and Smart Shift can each have a different map."
+            subtitle: "Record a shortcut for click and each swipe. Back, Gesture, and Smart Shift can each have a different map."
         ) {
             if model.gestureMapButtonIDs.isEmpty {
                 SettingsCard {
@@ -149,19 +153,7 @@ struct SettingsView: View {
                 }
 
                 SettingsCard {
-                    ForEach(Array(GestureEvent.allCases.enumerated()), id: \.element) { index, event in
-                        if index > 0 {
-                            SettingsRowDivider()
-                        }
-                        SettingsRow(title: event.rawValue.capitalized, symbol: symbol(forEvent: event)) {
-                            ShortcutField(
-                                text: model.gestureShortcutBinding(for: event),
-                                placeholder: "ctrl+left",
-                                accessibilityLabel: "\(model.gestureMapButtonID) \(event.rawValue)"
-                            )
-                            .frame(width: 176, height: 22)
-                        }
-                    }
+                    GesturePadView(model: model)
                 }
             }
         }
@@ -236,6 +228,7 @@ struct SettingsView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
                 .keyboardShortcut(.defaultAction)
+                .disabled(!model.canSave)
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 10)
@@ -252,16 +245,6 @@ struct SettingsView: View {
         case "right": return "computermouse.fill"
         case "smartShift": return "arrow.up.arrow.down"
         default: return "button.horizontal"
-        }
-    }
-
-    private func symbol(forEvent event: GestureEvent) -> String {
-        switch event {
-        case .click: return "dot.circle"
-        case .up: return "arrow.up"
-        case .down: return "arrow.down"
-        case .left: return "arrow.left"
-        case .right: return "arrow.right"
         }
     }
 }
@@ -303,6 +286,7 @@ private struct SettingsRow<Trailing: View>: View {
             trailing()
         }
         .padding(.horizontal, 12)
+        .padding(.vertical, 6)
         .frame(minHeight: 34)
     }
 }
@@ -315,48 +299,81 @@ private struct SettingsRowDivider: View {
     }
 }
 
-private struct ShortcutField: NSViewRepresentable {
-    @Binding var text: String
-    var placeholder: String
-    var accessibilityLabel: String
+private struct IssueCaption: View {
+    var issue: ShortcutFieldIssue?
 
-    func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField(string: text)
-        field.placeholderString = placeholder
-        field.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        field.bezelStyle = .roundedBezel
-        field.controlSize = .small
-        field.focusRingType = .default
-        field.delegate = context.coordinator
-        field.setAccessibilityLabel(accessibilityLabel)
-        field.lineBreakMode = .byTruncatingTail
-        field.cell?.usesSingleLineMode = true
-        field.cell?.sendsActionOnEndEditing = true
-        return field
+    var body: some View {
+        Text(issue?.message ?? " ")
+            .font(.system(size: 11))
+            .foregroundStyle(issue == nil ? Color.clear : Color.red)
+            .frame(minHeight: 14)
+            .accessibilityHidden(issue == nil)
     }
+}
 
-    func updateNSView(_ field: NSTextField, context: Context) {
-        if field.currentEditor() == nil, field.stringValue != text {
-            field.stringValue = text
+private struct GesturePadView: View {
+    @ObservedObject var model: SettingsModel
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.primary.opacity(0.045))
+                .frame(width: 92, height: 268)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.primary.opacity(0.045))
+                .frame(width: 320, height: 92)
+
+            VStack(spacing: 14) {
+                padSlot(.up)
+                HStack(spacing: 18) {
+                    padSlot(.left)
+                    padSlot(.click)
+                    padSlot(.right)
+                }
+                padSlot(.down)
+            }
+            .padding(.vertical, 18)
         }
-        field.placeholderString = placeholder
-        field.setAccessibilityLabel(accessibilityLabel)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
     }
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text)
-    }
+    private func padSlot(_ event: GestureEvent) -> some View {
+        VStack(spacing: 6) {
+            ZStack {
+                if event == .click {
+                    Circle()
+                        .fill(Color(nsColor: .controlBackgroundColor))
+                        .overlay {
+                            Circle()
+                                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                        }
+                        .frame(width: 36, height: 36)
+                }
+                Image(systemName: symbol(for: event))
+                    .font(.system(size: event == .click ? 13 : 15, weight: .semibold))
+                    .foregroundStyle(event == .click ? Color.primary : Color.secondary)
+            }
+            .frame(height: 36)
 
-    final class Coordinator: NSObject, NSTextFieldDelegate {
-        var text: Binding<String>
+            ShortcutRecorder(
+                shortcut: model.gestureShortcutBinding(for: event),
+                accessibilityLabel: "\(model.gestureMapButtonID) \(event.rawValue)"
+            )
+            .frame(width: 108, height: 22)
 
-        init(text: Binding<String>) {
-            self.text = text
+            IssueCaption(issue: model.gestureIssue(for: event))
         }
+        .frame(width: 116)
+    }
 
-        func controlTextDidChange(_ obj: Notification) {
-            guard let field = obj.object as? NSTextField else { return }
-            text.wrappedValue = field.stringValue
+    private func symbol(for event: GestureEvent) -> String {
+        switch event {
+        case .click: return "dot.circle"
+        case .up: return "arrow.up"
+        case .down: return "arrow.down"
+        case .left: return "arrow.left"
+        case .right: return "arrow.right"
         }
     }
 }
